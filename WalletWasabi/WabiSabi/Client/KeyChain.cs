@@ -3,6 +3,7 @@ using System.Linq;
 using WalletWasabi.Blockchain.Keys;
 using WalletWasabi.Crypto;
 using WalletWasabi.Extensions;
+using WalletWasabi.WabiSabi.Models.MultipartyTransaction;
 using WalletWasabi.Wallets;
 
 namespace WalletWasabi.WabiSabi.Client;
@@ -38,9 +39,9 @@ public class KeyChain : IKeyChain
 		return NBitcoinExtensions.GetOwnershipProof(masterKey, secret, destination.ScriptPubKey, commitmentData);
 	}
 
-	public Transaction Sign(Transaction transaction, Coin coin, PrecomputedTransactionData precomputedTransactionData)
+	public Transaction Sign(TransactionWithPrecomputedData unsignedCoinJoin, Coin coin)
 	{
-		transaction = transaction.Clone();
+		var transaction = unsignedCoinJoin.Transaction.Clone();
 
 		if (transaction.Inputs.Count == 0)
 		{
@@ -56,7 +57,7 @@ public class KeyChain : IKeyChain
 		TransactionBuilder builder = Network.Main.CreateTransactionBuilder();
 		builder.AddKeys(secret);
 		builder.AddCoins(coin);
-		builder.SetSigningOptions(new SigningOptions(TaprootSigHash.All, (TaprootReadyPrecomputedTransactionData)precomputedTransactionData));
+		builder.SetSigningOptions(new SigningOptions(TaprootSigHash.All, (TaprootReadyPrecomputedTransactionData)unsignedCoinJoin.PrecomputedTransactionData));
 		builder.SignTransactionInPlace(transaction);
 
 		return transaction;
