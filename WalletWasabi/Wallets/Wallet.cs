@@ -14,6 +14,7 @@ using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Extensions;
 using WalletWasabi.FeeRateEstimation;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
 using WalletWasabi.Models;
@@ -148,6 +149,27 @@ public class Wallet : BackgroundService
 		}
 
 		await device.AuthorizeCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, KeyManager.TaprootAccountKeyPath, Network, cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Authorizes coinjoin on whichever hardware wallet backs this coinjoin wallet, building its key chain.
+	/// Dispatches to the vendor-specific flow (Trezor on-device authorization, Coldcard HSM policy).
+	/// </summary>
+	public Task AuthorizeHardwareCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
+	{
+		if (KeyManager.IsColdcardCoinJoinWallet())
+		{
+			return AuthorizeColdcardCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
+		}
+
+		return AuthorizeTrezorCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
+	}
+
+	private Task AuthorizeColdcardCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
+	{
+		// Composes an HSM policy from the limits, installs it via hsm_start, and builds a ColdcardKeyChain.
+		// Implemented with the Coldcard key chain and HSM policy composer.
+		throw new NotImplementedException("Coldcard coinjoin authorization is not yet implemented.");
 	}
 
 	/// <summary>

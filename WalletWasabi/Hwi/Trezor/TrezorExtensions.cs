@@ -17,9 +17,4 @@ public static class TrezorExtensions
 	public static bool IsSlip25KeyPath(this KeyPath keyPath) =>
 		keyPath.Indexes is [TrezorDevice.Slip25Purpose, ..];
 
-	public static bool SupportsCoinJoin(this HardwareWalletModels model) =>
-		model is HardwareWalletModels.Trezor_T
-			or HardwareWalletModels.Trezor_T_Simulator
-			or HardwareWalletModels.Trezor_Safe_3
-			or HardwareWalletModels.Trezor_Safe_5;
 }
