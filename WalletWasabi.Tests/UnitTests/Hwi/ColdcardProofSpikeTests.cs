@@ -38,4 +38,18 @@ public class ColdcardProofSpikeTests
 		// The exact check ArenaClient runs on a registered input's ownership proof.
 		Assert.True(proof.VerifyOwnership(spk, commitment, requireUserConfirmation: true));
 	}
+
+	[Fact]
+	public void ColdcardSlp9UsbCommandWireProofVerifies_P2wpkh()
+	{
+		// Full serialized ownership proof returned by the real firmware `slp9` USB command
+		// (Coldcard simulator, subpath m/84'/0'/0'/1/0, commitment below). Parsed exactly as the
+		// coordinator would parse it off the wire.
+		var wire = Convert.FromHexString("534c0019010100000000000000000000000000000000000000000000000000000000000000000002483045022100e63d0f796d6408f2f81c4cd32af8a9af5a7b12f957210c7ddb3ce8ec696a3c35022070fb1ab304df684b4e74396d3e0d87bae42bf1b21a18d4be671b42dcd59f6d3c012103327c51346d9d3ce21ab299b1d46d083608da3434564dd70821c6296742ffc839");
+		var spk = new Script(Convert.FromHexString("00140f967e793629de58a6d9a1b001c81b58b310fc54"));
+		var commitment = Encoding.ASCII.GetBytes("coldcard-spike-commitment");
+
+		var proof = OwnershipProof.FromBytes(wire);
+		Assert.True(proof.VerifyOwnership(spk, commitment, requireUserConfirmation: true));
+	}
 }
