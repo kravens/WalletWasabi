@@ -45,7 +45,18 @@ public static class HardwareWalletOperationHelpers
 
 		var client = new HwiClient(network);
 		var segwitExtPubKey = await client.GetXpubAsync(device.Model, device.Path, segwitAccountKeyPath, genCts.Token).ConfigureAwait(false);
-		return KeyManager.CreateNewHardwareWalletWatchOnly(fingerPrint, segwitExtPubKey, null, null, null, network, walletFilePath);
+		var keyManager = KeyManager.CreateNewHardwareWalletWatchOnly(fingerPrint, segwitExtPubKey, null, null, null, network, walletFilePath);
+
+		if (enableCoinjoin && device.Model is HardwareWalletModels.Coldcard or HardwareWalletModels.Coldcard_Simulator)
+		{
+			// A Coldcard coinjoin wallet uses the default segwit account (no SLIP-25 like Trezor); isolation
+			// comes from the device HSM policy. Just mark it — the standard HWI import above already read the
+			// segwit account. (Segwit only for now; taproot needs edge firmware and is a follow-up.)
+			keyManager.IsColdcardCoinjoin = true;
+			keyManager.ToFile();
+		}
+
+		return keyManager;
 	}
 
 	/// <summary>

@@ -38,7 +38,7 @@ public partial class TrezorCoinJoinAuthDialogViewModel : AuthorizationDialogBase
 
 	protected override async Task<bool> AuthorizeAsync()
 	{
-		var authorized = await _walletCoinjoinModel.AuthorizeTrezorAsync().ConfigureAwait(true);
+		var authorized = await _walletCoinjoinModel.AuthorizeHardwareAsync().ConfigureAwait(true);
 		IsBridgeMissing = !authorized && _walletCoinjoinModel.TrezorAuthorization == TrezorAuthorizationStatus.BridgeNotFound;
 		if (!authorized)
 		{
