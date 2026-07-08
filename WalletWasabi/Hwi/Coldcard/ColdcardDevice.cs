@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using NBitcoin;
 
 namespace WalletWasabi.Hwi.Coldcard;
@@ -75,6 +76,107 @@ public sealed class ColdcardDevice : IDisposable
 		var request = header.Concat(subpath).Concat(commitmentData).ToArray();
 		var (_, payload) = _transport.SendReceive(request);
 		return payload;
+	}
+
+	/// <summary>
+	/// Installs an HSM policy (JSON) and enters HSM mode. The user reviews and approves the policy on the
+	/// device; afterwards coinjoin PSBTs and ownership proofs are signed unattended within the policy.
+	/// </summary>
+	public void StartHsm(string policyJson, CancellationToken cancellationToken)
+	{
+		var data = Encoding.UTF8.GetBytes(policyJson);
+		var sha = UploadFile(data);
+
+		// 'hsms': length + sha of the uploaded policy. The device shows the policy for on-device approval.
+		var request = new byte[40];
+		Encoding.ASCII.GetBytes("hsms").CopyTo(request, 0);
+		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)data.Length);
+		sha.CopyTo(request, 8);
+		_transport.SendReceive(request, timeoutMs: 120000); // waits for the user to approve on the device
+	}
+
+	/// <summary>
+	/// Signs a PSBT on the device (partial: only inputs this wallet owns) and returns the signed PSBT. Under
+	/// an HSM policy this happens unattended; otherwise the device prompts for approval.
+	/// </summary>
+	public byte[] SignPsbt(byte[] psbt, CancellationToken cancellationToken)
+	{
+		var sha = UploadFile(psbt);
+
+		// 'stxn': length + flags (0 = do not finalize, return signed PSBT) + sha.
+		var request = new byte[40];
+		Encoding.ASCII.GetBytes("stxn").CopyTo(request, 0);
+		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)psbt.Length);
+		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(8), 0);
+		sha.CopyTo(request, 12);
+		_transport.SendReceive(request);
+
+		var (length, resultSha) = PollForSignedFile(cancellationToken);
+		return DownloadFile(length, resultSha, fileNumber: 1);
+	}
+
+	/// <summary>Uploads a file in blocks and verifies the device's checksum; returns its SHA-256.</summary>
+	private byte[] UploadFile(byte[] data)
+	{
+		const int BlockSize = 1024;
+		for (int offset = 0; offset < data.Length; offset += BlockSize)
+		{
+			int here = Math.Min(BlockSize, data.Length - offset);
+			// 'upld' layout: tag(4) ‖ offset(u32) ‖ total_size(u32) ‖ data.
+			var request = new byte[12 + here];
+			Encoding.ASCII.GetBytes("upld").CopyTo(request, 0);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)offset);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(8), (uint)data.Length);
+			Array.Copy(data, offset, request, 12, here);
+			_transport.SendReceive(request);
+		}
+
+		var expected = System.Security.Cryptography.SHA256.HashData(data);
+		var (_, deviceSha) = _transport.SendReceive(Encoding.ASCII.GetBytes("sha2"));
+		if (!deviceSha.AsSpan().SequenceEqual(expected))
+		{
+			throw new ColdcardException("Checksum mismatch during file upload.");
+		}
+		return expected;
+	}
+
+	/// <summary>Downloads a signed file (file 1) block by block and checks its SHA-256.</summary>
+	private byte[] DownloadFile(uint length, byte[] expectedSha, int fileNumber)
+	{
+		const int BlockSize = 1024;
+		var result = new byte[length];
+		for (uint offset = 0; offset < length; offset += BlockSize)
+		{
+			uint here = Math.Min(BlockSize, length - offset);
+			var request = new byte[16];
+			Encoding.ASCII.GetBytes("dwld").CopyTo(request, 0);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), offset);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(8), here);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(12), (uint)fileNumber);
+			var (_, chunk) = _transport.SendReceive(request);
+			chunk.CopyTo(result, (int)offset);
+		}
+
+		if (!System.Security.Cryptography.SHA256.HashData(result).AsSpan().SequenceEqual(expectedSha))
+		{
+			throw new ColdcardException("Checksum mismatch during file download.");
+		}
+		return result;
+	}
+
+	private (uint Length, byte[] Sha) PollForSignedFile(CancellationToken cancellationToken)
+	{
+		while (true)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			var (tag, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("stok"));
+			if (tag == "strx") // done: <I32s> length + sha
+			{
+				return (BinaryPrimitives.ReadUInt32LittleEndian(payload), payload[4..36]);
+			}
+			// 'okay' (empty) means still working — poll again.
+			Thread.Sleep(250);
+		}
 	}
 
 	public void Dispose() => _transport.Dispose();
