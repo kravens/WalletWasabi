@@ -32,9 +32,11 @@ public sealed class ColdcardTransport : IDisposable
 			throw new IOException($"Unexpected reply to encrypt-start: '{tag}'.");
 		}
 
+		// mypb layout: device pubkey (64) ‖ fingerprint (u32) ‖ xpub length (u32) ‖ xpub.
 		var deviceXY = payload[..64];
 		uint fingerprint = BitConverter.ToUInt32(payload, 64);
-		string masterXpub = Encoding.ASCII.GetString(payload, 68, payload.Length - 68).TrimEnd('\0');
+		uint xpubLength = BitConverter.ToUInt32(payload, 68);
+		string masterXpub = xpubLength == 0 ? "" : Encoding.ASCII.GetString(payload, 72, (int)xpubLength);
 
 		encryption.DeriveSessionKey(deviceXY);
 		_encryption = encryption;
