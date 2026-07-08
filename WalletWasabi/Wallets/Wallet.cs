@@ -170,11 +170,34 @@ public class Wallet : BackgroundService
 		return AuthorizeTrezorCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
 	}
 
-	private Task AuthorizeColdcardCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
+	private async Task AuthorizeColdcardCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
 	{
-		// Composes an HSM policy from the limits, installs it via hsm_start, and builds a ColdcardKeyChain.
-		// Implemented with the Coldcard key chain and HSM policy composer.
-		throw new NotImplementedException("Coldcard coinjoin authorization is not yet implemented.");
+		if (KeyChain is ColdcardKeyChain)
+		{
+			return; // already in an HSM session for this run
+		}
+
+		// The Coldcard HSM has no per-round or sat/vByte concept; the fee cap and the value-leak guard are
+		// both expressed as the self-transfer floor in the policy. The user reviews and approves the policy
+		// on the device once; afterwards coinjoin rounds sign unattended.
+		var accountPaths = new List<KeyPath> { KeyManager.SegwitAccountKeyPath };
+		if (KeyManager.TaprootExtPubKey is not null)
+		{
+			accountPaths.Add(KeyManager.TaprootAccountKeyPath);
+		}
+		var policyJson = ColdcardHsmPolicy.Compose(accountPaths);
+
+		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
+		try
+		{
+			await Task.Run(() => device.StartHsm(policyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
+			KeyChain = new ColdcardKeyChain(device, KeyManager);
+		}
+		catch
+		{
+			device.Dispose();
+			throw;
+		}
 	}
 
 	/// <summary>
@@ -353,6 +376,7 @@ public class Wallet : BackgroundService
 		WalletFilterProcessor.Dispose();
 
 		(KeyChain as TrezorKeyChain)?.Dispose();
+		(KeyChain as ColdcardKeyChain)?.Dispose();
 
 		// Release the bridge we may have started for this wallet so HWI can use the device again.
 		if (KeyManager.IsTrezorCoinJoinWallet())
