@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using WalletWasabi.Exceptions;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
 using WalletWasabi.Services;
@@ -226,13 +227,13 @@ public class CoinJoinManager : BackgroundService
 		// also builds the wallet's key chain. The GUI does this from its Play dialog, but with no GUI
 		// (daemon / JSON-RPC) it must happen here, so a headless client can coinjoin too. The user still
 		// approves the rounds and fee cap physically on the device (hold-to-confirm) once per batch.
-		if (walletToStart.KeyManager.IsTrezorCoinJoinWallet() && walletToStart.KeyChain is null)
+		if (walletToStart.KeyManager.IsHardwareCoinJoinWallet() && walletToStart.KeyChain is null)
 		{
 			try
 			{
 				using var authCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 				authCts.CancelAfter(TimeSpan.FromMinutes(3));
-				await walletToStart.AuthorizeTrezorCoinJoinAsync(
+				await walletToStart.AuthorizeHardwareCoinJoinAsync(
 					_coinJoinConfiguration.CoordinatorIdentifier,
 					walletToStart.KeyManager.TrezorCoinjoinMaxRounds,
 					new FeeRate(walletToStart.KeyManager.TrezorCoinjoinMaxMiningFeeRate),

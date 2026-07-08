@@ -200,11 +200,15 @@ public class KeyManager
 
 	public int AnonScoreTarget { get; set; } = PrivacyProfiles.DefaultProfile.AnonScoreTarget;
 
-	/// <summary>Max coinjoin rounds one Trezor authorization is good for. Shown on the device and confirmed there.</summary>
+	/// <summary>Max coinjoin rounds one hardware authorization is good for. Shown on the device and confirmed there. (Trezor authorization / Coldcard HSM policy.)</summary>
 	public int TrezorCoinjoinMaxRounds { get; set; } = DefaultTrezorCoinjoinMaxRounds;
 
-	/// <summary>Max mining fee rate (sat/vByte) the Trezor is authorized to sign coinjoins at. Shown on the device.</summary>
+	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal TrezorCoinjoinMaxMiningFeeRate { get; set; } = DefaultTrezorCoinjoinMaxMiningFeeRate;
+
+	/// <summary>Whether this hardware wallet is a Coldcard set up for coinjoin. Unlike Trezor (SLIP-25 account),
+	/// a Coldcard coinjoin wallet uses the default segwit/taproot accounts, so it needs an explicit marker.</summary>
+	public bool IsColdcardCoinjoin { get; set; }
 
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
@@ -811,6 +815,7 @@ public class KeyManager
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
 			("TrezorCoinjoinMaxRounds", Encode.Int(keyManager.TrezorCoinjoinMaxRounds)),
 			("TrezorCoinjoinMaxMiningFeeRate", Encode.Decimal(keyManager.TrezorCoinjoinMaxMiningFeeRate)),
+			("IsColdcardCoinjoin", Encode.Bool(keyManager.IsColdcardCoinjoin)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
 			("ChangeScriptPubKeyType", Encode.PreferredScriptPubKeyType(keyManager.ChangeScriptPubKeyType)),
@@ -851,6 +856,7 @@ public class KeyManager
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
 				TrezorCoinjoinMaxRounds = get.Optional("TrezorCoinjoinMaxRounds", Decode.Int, DefaultTrezorCoinjoinMaxRounds),
 				TrezorCoinjoinMaxMiningFeeRate = get.Optional("TrezorCoinjoinMaxMiningFeeRate", Decode.Decimal, DefaultTrezorCoinjoinMaxMiningFeeRate),
+				IsColdcardCoinjoin = get.Optional("IsColdcardCoinjoin", Decode.Bool, false),
 				NonPrivateCoinIsolation = get.Optional("RedCoinIsolation", Decode.Bool, false),
 				DefaultReceiveScriptType = get.Optional("DefaultReceiveScriptType", Decode.ScriptPubKeyType, ScriptPubKeyType.TaprootBIP86),
 				ChangeScriptPubKeyType = get.Optional("ChangeScriptPubKeyType", Decode.PreferredScriptPubKeyType) ?? PreferredScriptPubKeyType.Unspecified.Instance,

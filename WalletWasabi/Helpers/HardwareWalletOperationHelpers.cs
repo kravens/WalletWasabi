@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using NBitcoin;
 using WalletWasabi.Blockchain.Keys;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Models;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
