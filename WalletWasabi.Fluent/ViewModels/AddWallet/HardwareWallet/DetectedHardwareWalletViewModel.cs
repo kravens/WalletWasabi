@@ -6,6 +6,7 @@ using WalletWasabi.Extensions;
 using WalletWasabi.Fluent.Extensions;
 using WalletWasabi.Fluent.ViewModels.Navigation;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi.Models;
 using WalletWasabi.Logging;
 using WalletWasabi.Wallets;
 
@@ -16,6 +17,7 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 {
 	[AutoNotify] private bool _enableCoinjoin;
 	[AutoNotify] private bool _isBridgeUnavailable;
+	private readonly bool _usesBridge;
 
 	public DetectedHardwareWalletViewModel(UiContext uiContext, WalletCreationOptions.ConnectToHardwareWallet options) : base(uiContext)
 	{
@@ -32,6 +34,9 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 
 		// Coinjoin is opt-in: only offer it for models that can sign coinjoins on the device.
 		SupportsCoinjoin = device.SupportsCoinJoin();
+
+		// Only Trezor reaches the device through a bridge; Coldcard talks over USB directly.
+		_usesBridge = device.Model is not (HardwareWalletModels.Coldcard or HardwareWalletModels.Coldcard_Simulator);
 
 		SetupCancel(enableCancel: false, enableCancelOnEscape: false, enableCancelOnPressed: false);
 
@@ -97,7 +102,8 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 
 		// Warn up front when coinjoin is offered but the bridge that it needs is not running, so the user
 		// can start Trezor Suite before checking the box instead of hitting an error after confirming.
-		if (SupportsCoinjoin)
+		// Only Trezor uses a bridge; Coldcard talks over USB directly, so it never shows this warning.
+		if (SupportsCoinjoin && _usesBridge)
 		{
 			Task.Run(async () =>
 			{

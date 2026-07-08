@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using ReactiveUI;
 using WalletWasabi.Fluent.Extensions;
 using WalletWasabi.Fluent.Infrastructure;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
 using WalletWasabi.WabiSabi.Client;
@@ -102,16 +103,16 @@ public partial class WalletCoinjoinModel : ReactiveObject
 	public IObservable<bool> IsStarted { get; }
 
 	/// <summary>
-	/// Asks the Trezor for the coinjoin authorization: the device shows the number of rounds and the
-	/// maximum mining fee rate and the user confirms with hold-to-confirm. TrezorAuthorization drives
-	/// both the authorization dialog and the music box text so the user knows to look at the device.
+	/// Asks the hardware wallet for the coinjoin authorization: Trezor shows the rounds and max fee rate for
+	/// hold-to-confirm; Coldcard shows the HSM policy for approval. TrezorAuthorization drives both the
+	/// authorization dialog and the music box text so the user knows to look at the device.
 	/// </summary>
-	public async Task<bool> AuthorizeTrezorAsync()
+	public async Task<bool> AuthorizeHardwareAsync()
 	{
 		TrezorAuthorization = TrezorAuthorizationStatus.AwaitingConfirmation;
 		try
 		{
-			await _wallet.AuthorizeTrezorCoinJoinAsync(
+			await _wallet.AuthorizeHardwareCoinJoinAsync(
 				_services.Config.CoordinatorIdentifier,
 				_wallet.KeyManager.TrezorCoinjoinMaxRounds,
 				new FeeRate(_wallet.KeyManager.TrezorCoinjoinMaxMiningFeeRate),
@@ -127,25 +128,25 @@ public partial class WalletCoinjoinModel : ReactiveObject
 		}
 		catch (TrezorDeviceNotFoundException e)
 		{
-			Logger.LogWarning($"Trezor coinjoin authorization failed: {e.Message}");
+			Logger.LogWarning($"Hardware coinjoin authorization failed: {e.Message}");
 			TrezorAuthorization = TrezorAuthorizationStatus.DeviceNotFound;
 			return false;
 		}
-		catch (TrezorException e)
+		catch (Exception e)
 		{
-			Logger.LogWarning($"Trezor coinjoin authorization failed: {e.Message}");
+			Logger.LogWarning($"Hardware coinjoin authorization failed: {e.Message}");
 			TrezorAuthorization = TrezorAuthorizationStatus.Failed;
 			return false;
 		}
 	}
 
-	/// <param name="skipTrezorAuthorization">True when the caller already authorized through the dialog.</param>
-	public async Task StartAsync(bool stopWhenAllMixed, bool overridePlebStop, bool skipTrezorAuthorization = false)
+	/// <param name="skipHardwareAuthorization">True when the caller already authorized through the dialog.</param>
+	public async Task StartAsync(bool stopWhenAllMixed, bool overridePlebStop, bool skipHardwareAuthorization = false)
 	{
-		if (_wallet.KeyManager.IsTrezorCoinJoinWallet() && !skipTrezorAuthorization)
+		if (_wallet.KeyManager.IsHardwareCoinJoinWallet() && !skipHardwareAuthorization)
 		{
 			// Without the authorization no coinjoin can start.
-			if (!await AuthorizeTrezorAsync().ConfigureAwait(false))
+			if (!await AuthorizeHardwareAsync().ConfigureAwait(false))
 			{
 				return;
 			}
