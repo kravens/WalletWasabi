@@ -185,6 +185,8 @@ public class Wallet : BackgroundService
 		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
 		try
 		{
+			// Fail early with a clear message if this device's firmware can't run the policy (Mk3/older, Q).
+			ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(device.GetVersion());
 			await Task.Run(() => device.StartHsm(policyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
 			KeyChain = new ColdcardKeyChain(device, KeyManager);
 		}
