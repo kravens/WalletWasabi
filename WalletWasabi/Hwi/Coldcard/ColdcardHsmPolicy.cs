@@ -42,30 +42,24 @@ public static class ColdcardHsmPolicy
 	}
 
 	/// <summary>
-	/// Throws <see cref="NotSupportedException"/> when the connected Coldcard can't run this policy, turning
-	/// the device's raw "Unknown item: min_pct_self_transfer" reject into a clear message. Both the
-	/// self-transfer rule and the <c>slp9</c> ownership-proof command are Mk4-class firmware features: the Q
-	/// dropped HSM mode entirely, and the Mk3/older firmware line ended at 4.1.9, before the rule existed.
-	/// Pass the reply from <see cref="ColdcardDevice.GetVersion"/> — its lines include the model token
-	/// (e.g. "mk4", "mk3", "q1"). A too-old Mk4 (very rare — the rule shipped years ago) falls through here and
-	/// surfaces the device's own reject.
+	/// Throws <see cref="NotSupportedException"/> for a Coldcard whose firmware can never run this policy,
+	/// turning the device's raw "Unknown item: min_pct_self_transfer" reject into a clear message. Only the
+	/// Mk3 and older are a permanent dead end: their firmware line ended at 4.1.9, before the self-transfer
+	/// rule existed, and no newer build is offered. The Q (HSM re-added in 1.3.4Q, under Advanced &gt;
+	/// Spending Policy) and the Mk4/Mk5 are firmware-version dependent, so they're left to the device: a
+	/// too-old build surfaces its own reject rather than being blocked by model. Pass the reply from
+	/// <see cref="ColdcardDevice.GetVersion"/> — its lines include the model token (e.g. "mk4", "mk3", "q1").
 	/// </summary>
 	public static void EnsureFirmwareSupportsPolicy(string versionReply)
 	{
-		// Safe to substring-match model tokens: a git hash is hex, which never contains 'm', 'k' or 'q'.
+		// Safe to substring-match model tokens: a git hash is hex, which never contains 'm' or 'k'.
 		var v = (versionReply ?? "").ToLowerInvariant();
-
-		if (v.Contains("q1"))
-		{
-			throw new NotSupportedException(
-				"This Coldcard Q has no HSM mode, so it cannot sign coinjoins unattended. A Coldcard Mk4 is required.");
-		}
 
 		if (v.Contains("mk1") || v.Contains("mk2") || v.Contains("mk3"))
 		{
 			throw new NotSupportedException(
 				"This Coldcard (Mk3 or older) can't sign coinjoins: its firmware line ended at 4.1.9, before the "
-				+ "'min_pct_self_transfer' HSM rule existed. A Coldcard Mk4 is required.");
+				+ "'min_pct_self_transfer' HSM rule existed. A Coldcard Mk4 or an updated Q (firmware 1.3.4Q+) is required.");
 		}
 	}
 
