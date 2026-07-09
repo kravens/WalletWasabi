@@ -98,23 +98,44 @@ public static class HardwareWalletOperationHelpers
 	}
 
 	/// <summary>
-	/// Adds a SLIP-25 coinjoin account to an already imported Trezor watch-only wallet, so it can start
-	/// signing coinjoins. Requires the Trezor Bridge and a confirmation on the device. No-op if the wallet
-	/// already has one. Throws <see cref="TrezorException"/> when the device or bridge is unavailable.
+	/// Enables coinjoin on an already imported hardware watch-only wallet. The vendor is detected by
+	/// enumerating over HWI and matching the wallet's fingerprint: a Coldcard just gets marked (it uses the
+	/// default segwit account, already imported); a Trezor gets its SLIP-25 coinjoin account added via the
+	/// bridge (needs a device confirmation). No-op if already enabled. Throws with a clear message when the
+	/// device is unavailable, so the caller can tell the user rather than silently doing nothing.
 	/// </summary>
 	public static async Task EnableCoinJoinAsync(KeyManager keyManager, Network network, CancellationToken cancelToken)
 	{
 		if (!keyManager.IsHardwareWallet)
 		{
-			throw new InvalidOperationException("Only a hardware wallet can have a coinjoin account added.");
+			throw new InvalidOperationException("Only a hardware wallet can have coinjoin enabled.");
 		}
-		if (keyManager.IsTrezorCoinJoinWallet())
+		if (keyManager.IsHardwareCoinJoinWallet())
 		{
 			return;
 		}
 
-		// The SLIP-25 account is only reachable through the Trezor Bridge. Any failure (bridge down, device
-		// declined) throws TrezorException so the caller can tell the user, rather than silently doing nothing.
+		// Which device is this? HWI needs the USB device to itself, so release any coinjoin bridge first.
+		TrezorBridgeManager.StopIfOurs();
+		var client = new HwiClient(network);
+		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+		using var linked = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancelToken);
+		var entry = (await client.EnumerateAsync(linked.Token).ConfigureAwait(false))
+			.FirstOrDefault(e => e.Fingerprint == keyManager.MasterFingerprint);
+		if (entry is null)
+		{
+			throw new InvalidOperationException("Hardware wallet not found. Connect and unlock the device, then try again.");
+		}
+
+		if (entry.Model is HardwareWalletModels.Coldcard or HardwareWalletModels.Coldcard_Simulator)
+		{
+			// Coldcard coinjoins from the default segwit account (already imported) under an HSM policy; just mark it.
+			keyManager.IsColdcardCoinjoin = true;
+			keyManager.ToFile();
+			return;
+		}
+
+		// Trezor: the SLIP-25 account is only reachable through the bridge (needs a device confirmation).
 		using var trezor = await TrezorDevice.FindAsync(keyManager.MasterFingerprint, cancelToken).ConfigureAwait(false);
 		var coinJoinAccountKeyPath = TrezorDevice.GetCoinJoinAccountKeyPath(network);
 		var coinJoinExtPubKey = await trezor.GetCoinJoinXpubAsync(coinJoinAccountKeyPath, network, cancelToken).ConfigureAwait(false);
