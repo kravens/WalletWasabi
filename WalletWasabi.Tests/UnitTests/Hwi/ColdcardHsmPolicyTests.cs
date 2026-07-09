@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Text.Json;
 using NBitcoin;
@@ -28,5 +29,23 @@ public class ColdcardHsmPolicyTests
 		Assert.Contains("m/84'/0'/0'/1/*", paths);
 		Assert.Contains("m/86'/0'/0'/0/*", paths);
 		Assert.Contains("m/86'/0'/0'/1/*", paths);
+	}
+
+	[Theory]
+	[InlineData("4.1.9\nmk3\n")]                 // last Mk3 firmware: no min_pct_self_transfer
+	[InlineData("Coldcard MK2 bootloader\n")]
+	[InlineData("1.3.3Q\nq1\n")]                  // Q: no HSM mode at all
+	public void RejectsUnsupportedDevices(string versionReply)
+	{
+		Assert.Throws<NotSupportedException>(() => ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(versionReply));
+	}
+
+	[Theory]
+	[InlineData("5.4.0\nmk4\n")]
+	[InlineData("6.0.0\nmk5\n")]
+	[InlineData("")]                              // unknown model: let the device decide, don't false-block
+	public void AllowsMk4AndUnknown(string versionReply)
+	{
+		ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(versionReply); // no throw
 	}
 }

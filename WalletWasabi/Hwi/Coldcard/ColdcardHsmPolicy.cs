@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -38,6 +39,34 @@ public static class ColdcardHsmPolicy
 		};
 
 		return JsonSerializer.Serialize(policy, new JsonSerializerOptions { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict });
+	}
+
+	/// <summary>
+	/// Throws <see cref="NotSupportedException"/> when the connected Coldcard can't run this policy, turning
+	/// the device's raw "Unknown item: min_pct_self_transfer" reject into a clear message. Both the
+	/// self-transfer rule and the <c>slp9</c> ownership-proof command are Mk4-class firmware features: the Q
+	/// dropped HSM mode entirely, and the Mk3/older firmware line ended at 4.1.9, before the rule existed.
+	/// Pass the reply from <see cref="ColdcardDevice.GetVersion"/> — its lines include the model token
+	/// (e.g. "mk4", "mk3", "q1"). A too-old Mk4 (very rare — the rule shipped years ago) falls through here and
+	/// surfaces the device's own reject.
+	/// </summary>
+	public static void EnsureFirmwareSupportsPolicy(string versionReply)
+	{
+		// Safe to substring-match model tokens: a git hash is hex, which never contains 'm', 'k' or 'q'.
+		var v = (versionReply ?? "").ToLowerInvariant();
+
+		if (v.Contains("q1"))
+		{
+			throw new NotSupportedException(
+				"This Coldcard Q has no HSM mode, so it cannot sign coinjoins unattended. A Coldcard Mk4 is required.");
+		}
+
+		if (v.Contains("mk1") || v.Contains("mk2") || v.Contains("mk3"))
+		{
+			throw new NotSupportedException(
+				"This Coldcard (Mk3 or older) can't sign coinjoins: its firmware line ended at 4.1.9, before the "
+				+ "'min_pct_self_transfer' HSM rule existed. A Coldcard Mk4 is required.");
+		}
 	}
 
 	// Kept for symmetry with how the value is rendered elsewhere (invariant culture).
