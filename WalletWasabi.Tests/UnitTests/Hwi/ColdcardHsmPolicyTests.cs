@@ -32,10 +32,9 @@ public class ColdcardHsmPolicyTests
 	}
 
 	[Theory]
-	[InlineData("4.1.9\nmk3\n")]                 // last Mk3 firmware: no min_pct_self_transfer
+	[InlineData("4.1.9\nmk3\n")]                 // last Mk3 firmware: no min_pct_self_transfer, no newer build
 	[InlineData("Coldcard MK2 bootloader\n")]
-	[InlineData("1.3.3Q\nq1\n")]                  // Q: no HSM mode at all
-	public void RejectsUnsupportedDevices(string versionReply)
+	public void RejectsMk3AndOlder(string versionReply)
 	{
 		Assert.Throws<NotSupportedException>(() => ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(versionReply));
 	}
@@ -43,8 +42,9 @@ public class ColdcardHsmPolicyTests
 	[Theory]
 	[InlineData("5.4.0\nmk4\n")]
 	[InlineData("6.0.0\nmk5\n")]
+	[InlineData("1.3.4Q\nq1\n")]                  // Q with HSM (1.3.4Q+): let the device validate, don't model-block
 	[InlineData("")]                              // unknown model: let the device decide, don't false-block
-	public void AllowsMk4AndUnknown(string versionReply)
+	public void AllowsMk4Mk5QAndUnknown(string versionReply)
 	{
 		ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(versionReply); // no throw
 	}
