@@ -68,7 +68,8 @@ public static class HardwareCoinJoin
 				or HardwareWalletModels.Trezor_Safe_5 => HardwareCoinJoinVendor.Trezor,
 			HardwareWalletModels.Coldcard
 				or HardwareWalletModels.Coldcard_Simulator => HardwareCoinJoinVendor.Coldcard,
-			// Krux and Passport Prime are not in HWI's model list yet; add them here with their models.
+			HardwareWalletModels.Foundation_Passport => HardwareCoinJoinVendor.PassportPrime,
+			// Krux is not in HWI's model list yet; add it here with its model.
 			_ => HardwareCoinJoinVendor.None,
 		};
 

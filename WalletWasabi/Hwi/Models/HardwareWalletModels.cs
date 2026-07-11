@@ -16,6 +16,9 @@ public enum HardwareWalletModels
 	[FriendlyName("Coldcard Simulator")]
 	Coldcard_Simulator,
 
+	[FriendlyName("Foundation Passport")]
+	Foundation_Passport,
+
 	[FriendlyName("BitBox")]
 	DigitalBitBox_01,
 
