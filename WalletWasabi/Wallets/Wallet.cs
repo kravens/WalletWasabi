@@ -15,6 +15,7 @@ using WalletWasabi.Extensions;
 using WalletWasabi.FeeRateEstimation;
 using WalletWasabi.Helpers;
 using WalletWasabi.Hwi.Coldcard;
+using WalletWasabi.Hwi.Passport;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
 using WalletWasabi.Models;
@@ -162,7 +163,59 @@ public class Wallet : BackgroundService
 			return AuthorizeColdcardCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
 		}
 
+		if (KeyManager.IsPassportCoinJoinWallet())
+		{
+			return AuthorizePassportCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
+		}
+
 		return AuthorizeTrezorCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
+	}
+
+	private async Task AuthorizePassportCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
+	{
+		if (KeyChain is PassportKeyChain)
+		{
+			return; // already in an authorized session for this run
+		}
+
+		// Passport enforces one policy per authorized session: the default segwit account, this coordinator,
+		// a per-round fee-contribution cap, self-spend outputs and a round budget. The user reviews and
+		// approves it once on the device; afterwards ownership proofs and signatures are produced unattended.
+		var policy = new CoinjoinPolicy
+		{
+			Network = Network,
+			Account = 0,
+			CoordinatorIdentifier = coordinatorIdentifier,
+			MaxFeeContributionSats = (ulong)PassportCoinjoinMaxFeeContribution(maxMiningFeeRate).Satoshi,
+			MaxRounds = (ushort)Math.Clamp(maxRounds, 1, ushort.MaxValue),
+			ValidForSeconds = (uint)TimeSpan.FromHours(12).TotalSeconds,
+		};
+
+		var device = await Task.Run(() => PassportDevice.Open(), cancellationToken).ConfigureAwait(false);
+		try
+		{
+			var sessionId = await Task.Run(() => device.AuthorizeCoinJoin(policy), cancellationToken).ConfigureAwait(false);
+			KeyChain = new PassportKeyChain(device, sessionId, KeyManager);
+		}
+		catch
+		{
+			device.Dispose();
+			throw;
+		}
+	}
+
+	/// <summary>
+	/// Converts the coinjoin max mining fee rate into a per-round sats cap for the Passport session policy.
+	/// A coinjoin registers few inputs per round for a wallet; bound the per-round input vsize generously so
+	/// the cap constrains genuinely excessive fees without rejecting normal rounds. The device treats this as
+	/// the maximum it may lose per round (mining + coordination fee share).
+	/// </summary>
+	private static Money PassportCoinjoinMaxFeeContribution(FeeRate maxMiningFeeRate)
+	{
+		// ponytail: flat per-round input-vsize budget. Tighten to the actual registered input count if rounds
+		// with many inputs need a snugger cap.
+		const int MaxRegisteredInputVsizePerRound = 4 * 110; // ~4 P2WPKH inputs
+		return maxMiningFeeRate.GetFee(MaxRegisteredInputVsizePerRound);
 	}
 
 	private async Task AuthorizeColdcardCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
@@ -371,6 +424,7 @@ public class Wallet : BackgroundService
 
 		(KeyChain as TrezorKeyChain)?.Dispose();
 		(KeyChain as ColdcardKeyChain)?.Dispose();
+		(KeyChain as PassportKeyChain)?.Dispose();
 
 		// Release the bridge we may have started for this wallet so HWI can use the device again.
 		if (KeyManager.IsTrezorCoinJoinWallet())

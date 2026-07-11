@@ -209,6 +209,11 @@ public class KeyManager
 	/// a Coldcard coinjoin wallet uses the default segwit/taproot accounts, so it needs an explicit marker.</summary>
 	public bool IsColdcardCoinjoin { get; set; }
 
+	/// <summary>Whether this hardware wallet is a Foundation Passport Prime set up for coinjoin. Like Coldcard
+	/// it uses the default segwit account (isolation is enforced by the device's session policy), so it needs
+	/// an explicit marker.</summary>
+	public bool IsPassportCoinjoin { get; set; }
+
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
 	public ScriptPubKeyType DefaultReceiveScriptType { get; set; } = ScriptPubKeyType.Segwit;
@@ -829,6 +834,7 @@ public class KeyManager
 			("TrezorCoinjoinMaxRounds", Encode.Int(keyManager.TrezorCoinjoinMaxRounds)),
 			("TrezorCoinjoinMaxMiningFeeRate", Encode.Decimal(keyManager.TrezorCoinjoinMaxMiningFeeRate)),
 			("IsColdcardCoinjoin", Encode.Bool(keyManager.IsColdcardCoinjoin)),
+			("IsPassportCoinjoin", Encode.Bool(keyManager.IsPassportCoinjoin)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
 			("ChangeScriptPubKeyType", Encode.PreferredScriptPubKeyType(keyManager.ChangeScriptPubKeyType)),
@@ -870,6 +876,7 @@ public class KeyManager
 				TrezorCoinjoinMaxRounds = get.Optional("TrezorCoinjoinMaxRounds", Decode.Int, DefaultTrezorCoinjoinMaxRounds),
 				TrezorCoinjoinMaxMiningFeeRate = get.Optional("TrezorCoinjoinMaxMiningFeeRate", Decode.Decimal, DefaultTrezorCoinjoinMaxMiningFeeRate),
 				IsColdcardCoinjoin = get.Optional("IsColdcardCoinjoin", Decode.Bool, false),
+				IsPassportCoinjoin = get.Optional("IsPassportCoinjoin", Decode.Bool, false),
 				NonPrivateCoinIsolation = get.Optional("RedCoinIsolation", Decode.Bool, false),
 				DefaultReceiveScriptType = get.Optional("DefaultReceiveScriptType", Decode.ScriptPubKeyType, ScriptPubKeyType.Segwit),
 				ChangeScriptPubKeyType = get.Optional("ChangeScriptPubKeyType", Decode.PreferredScriptPubKeyType) ?? PreferredScriptPubKeyType.Unspecified.Instance,
