@@ -52,4 +52,25 @@ public class ColdcardProofSpikeTests
 		var proof = OwnershipProof.FromBytes(wire);
 		Assert.True(proof.VerifyOwnership(spk, commitment, requireUserConfirmation: true));
 	}
+
+	[Fact]
+	public void ColdcardSlp9UsbCommandWireProofVerifies_P2tr()
+	{
+		// Full serialized ownership proof from the real firmware taproot branch (Coldcard simulator,
+		// subpath m/86'/0'/0'/1/0, same commitment). BIP-340 key-spend over the SLIP-19 digest.
+		var wire = Convert.FromHexString("534c001901010000000000000000000000000000000000000000000000000000000000000000000140ab13296ebe2d3b5f01080869f419d66ca9242e816f8c1ef23724a77e99593dcd55535565e47d9026ae336016099104b2b9f7b353ef6c4cbad1a89e69a1f4518a");
+		var commitment = Encoding.ASCII.GetBytes("coldcard-spike-commitment");
+
+		// The device's INTERNAL (pre-tweak) pubkey at that path. Deriving the P2TR scriptPubKey from it
+		// via NBitcoin's own BIP-86 tweak is the independent check: the proof only verifies if the firmware's
+		// taproot tweak (libsecp keypair_xonly_tweak_add) matches NBitcoin's.
+		var internalPubKey = new PubKey("024fecbea811f13c638b60d5f823f4a3cd10f646446b8f69e3575dee5fec0aad27");
+		var spk = internalPubKey.GetScriptPubKey(ScriptPubKeyType.TaprootBIP86);
+
+		// Sanity: NBitcoin's tweaked output key equals the firmware's out_xonly.
+		Assert.Equal("51204153cc8399f5c45ee260138551fb05e0a080d576244ab97308b417a57a0ddfef", spk.ToHex());
+
+		var proof = OwnershipProof.FromBytes(wire);
+		Assert.True(proof.VerifyOwnership(spk, commitment, requireUserConfirmation: true));
+	}
 }
