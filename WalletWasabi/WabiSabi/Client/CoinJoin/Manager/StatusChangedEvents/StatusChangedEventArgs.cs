@@ -29,7 +29,8 @@ public enum CoinjoinError
 	MinInputCountTooLow,
 	CoordinatorLiedAboutInputs,
 	NotEnoughConfirmedUnprivateBalance,
-	TrezorAuthorizationFailed
+	TrezorAuthorizationFailed,
+	KruxSessionUnavailable
 }
 
 public class StatusChangedEventArgs : EventArgs
