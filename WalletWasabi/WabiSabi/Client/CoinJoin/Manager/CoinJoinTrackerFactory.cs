@@ -42,6 +42,17 @@ public class CoinJoinTrackerFactory
 		// The only use-case when we set consolidation mode to true, when we are mixing to another wallet.
 		wallet.ConsolidationMode = outputWallet.WalletId != wallet.WalletId;
 
+		// A Krux wallet skips rounds above its own fee cap client-side, so expensive rounds
+		// never reach the device and never spend its pre-approved round budget.
+		var configuration = _coinJoinConfiguration;
+		if (wallet.KeyManager.IsKruxCoinJoinWallet)
+		{
+			configuration = configuration with
+			{
+				MaxCoinJoinMiningFeeRate = Math.Min(configuration.MaxCoinJoinMiningFeeRate, wallet.KeyManager.KruxCoinjoinMaxMiningFeeRate)
+			};
+		}
+
 		var coinSelector = CoinJoinCoinSelector.FromWallet(wallet);
 		var coinJoinClient = new CoinJoinClient(
 			ArenaRequestHandlerFactory,
@@ -49,7 +60,7 @@ public class CoinJoinTrackerFactory
 			outputWallet.OutputProvider,
 			_roundStatusProvider,
 			coinSelector,
-			_coinJoinConfiguration,
+			configuration,
 			_liquidityClueProvider,
 			doNotRegisterInLastMinuteTimeLimit: TimeSpan.FromMinutes(1));
 

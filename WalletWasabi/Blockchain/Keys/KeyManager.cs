@@ -33,6 +33,8 @@ public class KeyManager
 {
 	public const bool DefaultAutoCoinjoin = false;
 	public const bool DefaultRedCoinIsolation = false;
+	public const int DefaultKruxCoinjoinMaxRounds = 100; // Client-side guess of the device's session budget; the device enforces its own.
+	public const decimal DefaultKruxCoinjoinMaxMiningFeeRate = 5m; // sat/vByte; rounds above this are skipped client-side so they never spend device budget.
 
 	public const int AbsoluteMinGapLimit = 21;
 	public const int MaxGapLimit = 10_000;
@@ -196,6 +198,17 @@ public class KeyManager
 	public string? Icon { get; private set; }
 
 	public int AnonScoreTarget { get; set; } = PrivacyProfiles.DefaultProfile.AnonScoreTarget;
+
+	/// <summary>Marks this watch-only wallet as backed by a Krux on the kruxd bridge for coinjoin signing.</summary>
+	public bool UseKruxCoinJoin { get; set; }
+
+	/// <summary>Rounds one Krux session approval is expected to cover; mirrored from the device's own Max Rounds policy.</summary>
+	public int KruxCoinjoinMaxRounds { get; set; } = DefaultKruxCoinjoinMaxRounds;
+
+	/// <summary>Max mining fee rate (sat/vByte) worth attempting; the device refuses anything above its own cap regardless.</summary>
+	public decimal KruxCoinjoinMaxMiningFeeRate { get; set; } = DefaultKruxCoinjoinMaxMiningFeeRate;
+
+	public bool IsKruxCoinJoinWallet => UseKruxCoinJoin && IsHardwareWallet;
 
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
@@ -772,6 +785,9 @@ public class KeyManager
 			("PlebStopThreshold", Encode.MoneyBitcoins(keyManager.PlebStopThreshold)),
 			("Icon", Encode.Optional(keyManager.Icon, Encode.String)),
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
+			("UseKruxCoinJoin", Encode.Bool(keyManager.UseKruxCoinJoin)),
+			("KruxCoinjoinMaxRounds", Encode.Int(keyManager.KruxCoinjoinMaxRounds)),
+			("KruxCoinjoinMaxMiningFeeRate", Encode.Decimal(keyManager.KruxCoinjoinMaxMiningFeeRate)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
 			("ChangeScriptPubKeyType", Encode.PreferredScriptPubKeyType(keyManager.ChangeScriptPubKeyType)),
@@ -810,6 +826,9 @@ public class KeyManager
 				PlebStopThreshold = get.Optional("PlebStopThreshold", Decode.MoneyBitcoins) ?? DefaultPlebStopThreshold,
 				Icon = get.Optional("Icon", Decode.String),
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
+				UseKruxCoinJoin = get.Optional("UseKruxCoinJoin", Decode.Bool, false),
+				KruxCoinjoinMaxRounds = get.Optional("KruxCoinjoinMaxRounds", Decode.Int, DefaultKruxCoinjoinMaxRounds),
+				KruxCoinjoinMaxMiningFeeRate = get.Optional("KruxCoinjoinMaxMiningFeeRate", Decode.Decimal, DefaultKruxCoinjoinMaxMiningFeeRate),
 				NonPrivateCoinIsolation = get.Optional("RedCoinIsolation", Decode.Bool, false),
 				DefaultReceiveScriptType = get.Optional("DefaultReceiveScriptType", Decode.ScriptPubKeyType, ScriptPubKeyType.Segwit),
 				ChangeScriptPubKeyType = get.Optional("ChangeScriptPubKeyType", Decode.PreferredScriptPubKeyType) ?? PreferredScriptPubKeyType.Unspecified.Instance,

@@ -14,6 +14,7 @@ using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Extensions;
 using WalletWasabi.FeeRateEstimation;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi.Krux;
 using WalletWasabi.Logging;
 using WalletWasabi.Models;
 using WalletWasabi.Services;
@@ -123,6 +124,46 @@ public class Wallet : BackgroundService
 	public bool IsWalletPrivate() => GetPrivacyPercentage() >= 100;
 
 	public IEnumerable<SmartCoin> GetCoinjoinCoinCandidates() => Coins;
+
+	/// <summary>
+	/// Connects to the Krux through the kruxd bridge and verifies the device serves this wallet.
+	/// The user must already have approved the signing session on the device ("CoinJoin USB" screen,
+	/// which displays the fingerprint and the on-device policy); there is nothing to authorize from
+	/// the host side - by design the host cannot alter the device policy.
+	/// </summary>
+	public async Task EnsureKruxKeyChainAsync(CancellationToken cancellationToken)
+	{
+		if (!KeyManager.IsKruxCoinJoinWallet)
+		{
+			throw new NotSupportedException("This wallet is not marked as a Krux coinjoin wallet.");
+		}
+
+		if (KeyChain is KruxKeyChain)
+		{
+			return;
+		}
+
+		var client = new KruxClient();
+		try
+		{
+			var info = await client.GetInfoAsync(cancellationToken).ConfigureAwait(false);
+			if (KeyManager.MasterFingerprint is not { } expectedFingerprint || info.Fingerprint != expectedFingerprint)
+			{
+				throw new InvalidOperationException($"The Krux serves fingerprint {info.Fingerprint}, expected {KeyManager.MasterFingerprint}.");
+			}
+			if (info.MaxRounds > 0 && info.RoundsUsed >= info.MaxRounds)
+			{
+				throw new InvalidOperationException("The Krux signing session has exhausted its round budget. Re-approve the session on the device.");
+			}
+
+			KeyChain = new KruxKeyChain(client, KeyManager);
+		}
+		catch
+		{
+			client.Dispose();
+			throw;
+		}
+	}
 
 	/// <summary>
 	/// Get all the transactions associated to the wallet ordered by blockchain.
@@ -289,6 +330,8 @@ public class Wallet : BackgroundService
 		await base.StopAsync(cancel).ConfigureAwait(false);
 		await WalletFilterProcessor.StopAsync(cancel).ConfigureAwait(false);
 		WalletFilterProcessor.Dispose();
+
+		(KeyChain as KruxKeyChain)?.Dispose();
 
 		_disposables.Dispose();
 	}

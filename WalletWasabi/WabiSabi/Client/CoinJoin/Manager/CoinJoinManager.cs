@@ -137,7 +137,7 @@ public class CoinJoinManager : BackgroundService
 				switch (command)
 				{
 					case StartCoinJoinCommand startCommand:
-						HandleStartCoinJoinCommand(startCommand, coinJoinTrackerFactory);
+						await HandleStartCoinJoinCommandAsync(startCommand, coinJoinTrackerFactory, cancellationToken).ConfigureAwait(false);
 						break;
 
 					case StopCoinJoinCommand stopCommand:
@@ -164,9 +164,28 @@ public class CoinJoinManager : BackgroundService
 		await WaitAndHandleResultOfTasksAsync(nameof(_state.TrackedAutoStarts), _state.TrackedAutoStarts.Values.Select(x => x.Task).ToArray()).ConfigureAwait(false);
 	}
 
-	private void HandleStartCoinJoinCommand(StartCoinJoinCommand startCommand, CoinJoinTrackerFactory coinJoinTrackerFactory)
+	private async Task HandleStartCoinJoinCommandAsync(StartCoinJoinCommand startCommand, CoinJoinTrackerFactory coinJoinTrackerFactory, CancellationToken cancellationToken)
 	{
 		var walletToStart = startCommand.Wallet;
+
+		// A Krux coinjoin wallet is watch-only until the device is reached through the kruxd bridge.
+		// The signing session (policy + round budget) was pre-approved physically on the device;
+		// here we only verify the bridge is up, the fingerprint matches and budget remains.
+		if (walletToStart.KeyManager.IsKruxCoinJoinWallet && walletToStart.KeyChain is null)
+		{
+			try
+			{
+				using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+				connectCts.CancelAfter(TimeSpan.FromSeconds(30));
+				await walletToStart.EnsureKruxKeyChainAsync(connectCts.Token).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				Logger.LogWarning(FormatLog($"Krux coinjoin session unavailable: {ex.Message}", walletToStart));
+				NotifyCoinJoinStartError(walletToStart, CoinjoinError.KruxSessionUnavailable);
+				return;
+			}
+		}
 
 		if (_state.TrackedCoinJoins.TryGetValue(walletToStart.WalletId, out var tracker))
 		{
