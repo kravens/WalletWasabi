@@ -250,13 +250,14 @@ public class P2pConnectionManager : IDisposable
 
 	public void DisconnectNode(Node node, MisbehaviorType misbehaviorType)
 	{
-		var shouldDisconnect = (misbehaviorType, Nodes.Length) switch
+		var shouldDisconnect = misbehaviorType switch
 		{
-			(MisbehaviorType.ProvidedInvalidData, _) => true,
-			(MisbehaviorType.Unknown, _) => true,
-			(MisbehaviorType.TimedOutDownloadingBlock, > 5) => true,
-			(_, < 5) => false,
-			(_, _) => node.SupportsCompactFilters,
+			MisbehaviorType.ProvidedInvalidData => true,
+			MisbehaviorType.Unknown => true,
+			// A timeout could be a slow connection and not a misbehaving node.
+			// Never disconnect filter-serving peers for it and always keep at least 5 nodes connected.
+			MisbehaviorType.TimedOutDownloadingBlock => Nodes.Length > 5 && !node.SupportsCompactFilters,
+			_ => true,
 		};
 
 		if (!shouldDisconnect)
