@@ -11,7 +11,7 @@ namespace WalletWasabi.Hwi.Passport;
 /// on-device coinjoin session authorization, and policy-enforced PSBT signing. Ownership proofs and
 /// signatures are produced unattended once a session is authorized (see <see cref="AuthorizeCoinJoin"/>).
 /// </summary>
-public sealed class PassportDevice : IDisposable
+public sealed class PassportDevice : IPassportDevice
 {
 	private readonly PassportTransport _transport;
 

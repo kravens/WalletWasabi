@@ -12,15 +12,16 @@ using WalletWasabi.WabiSabi.Models.MultipartyTransaction;
 namespace WalletWasabi.WabiSabi.Client;
 
 /// <summary>
-/// Key chain backed by a Foundation Passport Prime acting as a coinjoin remote signer over its wallet-rpc USB
-/// protocol. A one-time on-device session authorization (see <see cref="Wallets.Wallet.AuthorizeHardwareCoinJoinAsync"/>)
+/// Key chain backed by a Foundation Passport Prime acting as a coinjoin remote signer, reached through
+/// <see cref="IPassportDevice"/> (USB HID today; QuantumLink drops in behind the same interface).
+/// A one-time on-device session authorization (see <see cref="Wallets.Wallet.AuthorizeHardwareCoinJoinAsync"/>)
 /// fixes the account, coordinator, per-round fee cap and self-spend rule; afterwards ownership proofs use the
 /// firmware's SLIP-19 command and the round is signed by handing the device a PSBT it verifies against the
 /// authorized policy and signs unattended. Uses the default segwit account — no SLIP-25 account like Trezor.
 /// </summary>
 public class PassportKeyChain : IKeyChain, IDisposable
 {
-	public PassportKeyChain(PassportDevice device, uint sessionId, KeyManager keyManager)
+	public PassportKeyChain(IPassportDevice device, uint sessionId, KeyManager keyManager)
 	{
 		if (!keyManager.IsHardwareWallet)
 		{
@@ -32,13 +33,11 @@ public class PassportKeyChain : IKeyChain, IDisposable
 		_keyManager = keyManager;
 	}
 
-	private readonly PassportDevice _device;
+	private readonly IPassportDevice _device;
 	private readonly uint _sessionId;
 	private readonly KeyManager _keyManager;
 	private readonly object _signingLock = new();
 	private (uint256 TxId, Dictionary<OutPoint, WitScript> Witnesses)? _signedTransactionCache;
-
-	public PassportDevice Device => _device;
 
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
