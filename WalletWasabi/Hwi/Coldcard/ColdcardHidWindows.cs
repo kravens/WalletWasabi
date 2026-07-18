@@ -79,19 +79,21 @@ internal sealed class ColdcardHidWindows : IColdcardHid
 			return null;
 		}
 
-		var buffer = new byte[ColdcardUsb.InputReportLength];
+		// Windows requires the read buffer to be the HID InputReportByteLength, which always includes a
+		// leading report-id byte (0 for the Coldcard) before the 64 data bytes; a 64-byte buffer makes
+		// ReadFile fail with ERROR_INVALID_USER_BUFFER.
+		var buffer = new byte[ColdcardUsb.InputReportLength + 1];
 		if (!ReadFile(_handle, buffer, (uint)buffer.Length, out uint read, IntPtr.Zero))
 		{
-			throw new IOException("Coldcard HID read failed.");
+			throw new IOException($"Coldcard HID read failed (win32 error {Marshal.GetLastWin32Error()}).");
 		}
-		if (read == 0)
+		if (read <= 1)
 		{
 			return null;
 		}
 
-		// A Windows HID input report may be prefixed with a report-id byte; Coldcard uses report id 0 and
-		// 64-byte input reports, so return exactly what the device sent.
-		return read == buffer.Length ? buffer : buffer[..(int)read];
+		// Strip the report-id byte; the caller sees the 64 data bytes the device sent.
+		return buffer[1..(int)read];
 	}
 
 	public void Dispose() => _handle.Dispose();

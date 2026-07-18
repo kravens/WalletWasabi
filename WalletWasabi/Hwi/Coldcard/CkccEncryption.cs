@@ -25,12 +25,12 @@ public sealed class CkccEncryption
 		while (!Context.Instance.TryCreateECPrivKey(secret, out _ephemeralKey!));
 	}
 
-	/// <summary>Our ephemeral public key in uncompressed form (65 bytes: 0x04 ‖ x ‖ y), sent to the device.</summary>
-	public byte[] OurUncompressedPublicKey()
+	/// <summary>Our ephemeral public key as sent to the device: 64 bytes x ‖ y, no 0x04 prefix (ckcc wire format).</summary>
+	public byte[] OurPublicKeyXY()
 	{
 		var buffer = new byte[65];
 		_ephemeralKey.CreatePubKey().WriteToSpan(false, buffer, out _);
-		return buffer;
+		return buffer[1..];
 	}
 
 	/// <summary>Given the device's public key (64 bytes, x ‖ y), derives the session key and arms AES-CTR.</summary>

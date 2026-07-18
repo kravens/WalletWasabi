@@ -24,8 +24,8 @@ public sealed class ColdcardTransport : IDisposable
 	{
 		var encryption = new CkccEncryption();
 
-		// 'ncry' v1: our 65-byte uncompressed pubkey. Reply: his 64-byte pubkey ‖ 4-byte fingerprint ‖ xpub.
-		var request = Encoding.ASCII.GetBytes("ncry").Concat(new byte[] { 0x01, 0, 0, 0 }).Concat(encryption.OurUncompressedPublicKey()).ToArray();
+		// 'ncry' v1: our 64-byte x ‖ y pubkey (no 0x04 prefix). Reply: his 64-byte pubkey ‖ 4-byte fingerprint ‖ xpub.
+		var request = Encoding.ASCII.GetBytes("ncry").Concat(new byte[] { 0x01, 0, 0, 0 }).Concat(encryption.OurPublicKeyXY()).ToArray();
 		var (tag, payload) = SendReceiveRaw(request, encrypt: false);
 		if (tag != "mypb")
 		{
