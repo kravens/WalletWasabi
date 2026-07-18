@@ -103,8 +103,8 @@ public sealed class ColdcardDevice : IDisposable
 	{
 		var sha = UploadFile(psbt);
 
-		// 'stxn': length + flags (0 = do not finalize, return signed PSBT) + sha.
-		var request = new byte[40];
+		// 'stxn' layout '<4sII32s>': tag ‖ length ‖ flags (0 = do not finalize, return signed PSBT) ‖ sha.
+		var request = new byte[44];
 		Encoding.ASCII.GetBytes("stxn").CopyTo(request, 0);
 		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)psbt.Length);
 		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(8), 0);
