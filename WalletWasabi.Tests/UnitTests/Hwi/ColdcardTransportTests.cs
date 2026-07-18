@@ -37,8 +37,8 @@ public class ColdcardTransportTests
 		// Two peers do the same ephemeral ECDH the device and host do; both must derive the same session key.
 		var host = new CkccEncryption();
 		var device = new CkccEncryption();
-		host.DeriveSessionKey(device.OurUncompressedPublicKey()[1..]);   // strip 0x04 -> x ‖ y
-		device.DeriveSessionKey(host.OurUncompressedPublicKey()[1..]);
+		host.DeriveSessionKey(device.OurPublicKeyXY());
+		device.DeriveSessionKey(host.OurPublicKeyXY());
 
 		var plaintext = RandomNumberGenerator.GetBytes(100);
 		var ciphertext = host.EncryptRequest(plaintext);
@@ -53,8 +53,8 @@ public class ColdcardTransportTests
 		// CTR keystream must be AES-ECB of the big-endian counter starting at 0, XORed with the data.
 		var host = new CkccEncryption();
 		var device = new CkccEncryption();
-		host.DeriveSessionKey(device.OurUncompressedPublicKey()[1..]);
-		device.DeriveSessionKey(host.OurUncompressedPublicKey()[1..]);
+		host.DeriveSessionKey(device.OurPublicKeyXY());
+		device.DeriveSessionKey(host.OurPublicKeyXY());
 
 		// A zero plaintext returns the raw keystream, so the two directions produce the same first block.
 		var zero = new byte[32];
