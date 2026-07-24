@@ -57,7 +57,15 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		var keyPath = _keyManager.TryGetKeyPath(destination.ScriptPubKey)
 			?? throw new InvalidOperationException($"The key path for '{destination.ScriptPubKey}' was not found.");
 
-		var proofBytes = _device.SignOwnershipProof(keyPath, commitmentData.ToBytes(), userConfirmation: true);
+		// Tell the device which script we are proving, rather than letting it infer one from the path.
+		var scriptPubKey = destination.ScriptPubKey;
+		var scriptType = scriptPubKey.IsScriptType(ScriptType.Taproot)
+			? ScriptPubKeyType.TaprootBIP86
+			: scriptPubKey.IsScriptType(ScriptType.P2WPKH)
+				? ScriptPubKeyType.Segwit
+				: throw new NotSupportedException($"A Coldcard cannot prove ownership of '{scriptPubKey}'.");
+
+		var proofBytes = _device.SignOwnershipProof(keyPath, scriptType, commitmentData.ToBytes(), userConfirmation: true);
 		return OwnershipProof.FromBytes(proofBytes);
 	}
 

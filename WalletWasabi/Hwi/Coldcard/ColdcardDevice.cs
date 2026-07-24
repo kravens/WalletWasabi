@@ -63,21 +63,33 @@ public sealed class ColdcardDevice : IDisposable
 	/// Produces a SLIP-19 ownership proof for a coinjoin input (firmware <c>slp9</c> command). The returned
 	/// bytes are the fully serialized proof, ready for <c>OwnershipProof.FromBytes</c> and the coordinator.
 	/// </summary>
-	public byte[] SignOwnershipProof(KeyPath keyPath, byte[] commitmentData, bool userConfirmation = true)
+	public byte[] SignOwnershipProof(KeyPath keyPath, ScriptPubKeyType scriptType, byte[] commitmentData, bool userConfirmation = true)
 	{
 		var subpath = Encoding.ASCII.GetBytes($"m/{keyPath}");
 		byte flags = (byte)(userConfirmation ? 0x01 : 0x00);
 
-		var header = new byte[16];
+		// 'slp9' layout '<4sIIII>': tag ‖ addr_fmt ‖ flags ‖ subpath length ‖ commitment length. The
+		// address format is stated rather than left for the device to infer from the path, so the proof
+		// is over the script the coordinator actually holds for this input.
+		var header = new byte[20];
 		Encoding.ASCII.GetBytes("slp9").CopyTo(header, 0);
-		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), flags);
-		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (uint)subpath.Length);
-		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(12), (uint)commitmentData.Length);
+		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), AddressFormatOf(scriptType));
+		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), flags);
+		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(12), (uint)subpath.Length);
+		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(16), (uint)commitmentData.Length);
 
 		var request = header.Concat(subpath).Concat(commitmentData).ToArray();
 		var (_, payload) = _transport.SendReceive(request);
 		return payload;
 	}
+
+	/// <summary>The firmware's AF_* address format constant (see its <c>public_constants.py</c>).</summary>
+	private static uint AddressFormatOf(ScriptPubKeyType scriptType) => scriptType switch
+	{
+		ScriptPubKeyType.Segwit => 0x07,          // AF_P2WPKH = AFC_PUBKEY(1) | AFC_SEGWIT(2) | AFC_BECH32(4)
+		ScriptPubKeyType.TaprootBIP86 => 0x23,    // AF_P2TR   = AFC_PUBKEY(1) | AFC_SEGWIT(2) | AFC_BECH32M(0x20)
+		_ => throw new NotSupportedException($"A Coldcard ownership proof cannot be made for '{scriptType}'."),
+	};
 
 	/// <summary>
 	/// Installs an HSM policy (JSON) and enters HSM mode. The user reviews and approves the policy on the
