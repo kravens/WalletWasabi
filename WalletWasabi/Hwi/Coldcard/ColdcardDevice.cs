@@ -104,7 +104,11 @@ public sealed class ColdcardDevice : IDisposable
 		_transport.SendReceive(request);
 
 		// 'approval_wait' while the story is on screen, 'active' once approved, neither means refused.
-		var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(3);
+		// Generous window: the user reads the whole policy, confirms, then keys an anti-fat-finger digit,
+		// and on hardware three minutes turned out to be short for a first-time read. Giving up early is
+		// not destructive — the device keeps the prompt up, and a later approval is picked up by the
+		// already-active check above — but it does surface a spurious error, so don't rush it.
+		var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
 		while (true)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
@@ -129,7 +133,20 @@ public sealed class ColdcardDevice : IDisposable
 	/// currently on screen waiting for the user's approval.</summary>
 	public (bool Active, bool ApprovalWait) GetHsmStatus()
 	{
-		var (_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("hsts"));
+		byte[] payload;
+		try
+		{
+			(_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("hsts"));
+		}
+		catch (ColdcardException e) when (e.Message.Contains("HSM commands disabled"))
+		{
+			// Both 'hsts' and 'hsms' sit in the firmware's HSM_DISABLE_CMDS set, and a factory-fresh
+			// device ships with the setting off, so say where to turn it on instead of echoing the device.
+			throw new ColdcardException(
+				"HSM commands are disabled on this Coldcard. Enable them on the device at "
+				+ "Settings > Advanced/Tools > Spending Policy > HSM Mode > Enable, then try again.");
+		}
+
 		using var status = JsonDocument.Parse(payload);
 		return (
 			status.RootElement.TryGetProperty("active", out var active) && active.GetBoolean(),
