@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using NBitcoin;
@@ -16,9 +15,14 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </summary>
 public static class ColdcardHsmPolicy
 {
-	/// <summary>Default minimum self-transfer percentage. Tolerates ordinary coinjoin mining fees while
-	/// rejecting any material value leak.</summary>
-	public const double DefaultMinSelfTransferPercent = 90.0;
+	/// <summary>Default minimum self-transfer percentage. A compromised host can leak at most
+	/// (100 − this)% of the wallet's inputs per signed transaction, so this is kept tight: a legitimate
+	/// round keeps ~99.5%+ of the wallet's value (coordinator fee ≤ 0.3%, mining fee share well under
+	/// that). The flip side is intentional: a round where our fees would exceed 1% (tiny coins at high
+	/// fee rates, or value lost to failed output registrations) gets refused by the device. The number of
+	/// rounds one authorization is good for is enforced client-side
+	/// (<c>ColdcardKeyChain.RoundsExhausted</c>); a device-side round counter is a firmware follow-up.</summary>
+	public const double DefaultMinSelfTransferPercent = 99.0;
 
 	public static string Compose(IEnumerable<KeyPath> accountPaths, double minSelfTransferPercent = DefaultMinSelfTransferPercent)
 	{
@@ -69,7 +73,4 @@ public static class ColdcardHsmPolicy
 				+ "'min_pct_self_transfer' HSM rule existed. A Coldcard Mk4 is required.");
 		}
 	}
-
-	// Kept for symmetry with how the value is rendered elsewhere (invariant culture).
-	internal static string Pct(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 }

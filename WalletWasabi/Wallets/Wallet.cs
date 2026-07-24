@@ -167,14 +167,21 @@ public class Wallet : BackgroundService
 
 	private async Task AuthorizeColdcardCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
 	{
-		if (KeyChain is ColdcardKeyChain)
+		if (KeyChain is ColdcardKeyChain existing)
 		{
-			return; // already in an HSM session for this run
+			// Reuse the HSM session only when the device is still reachable and the user's round budget
+			// is not used up; otherwise rebuild it, which renews the budget with this fresh authorization.
+			if (!existing.RoundsExhausted && IsDeviceAlive(existing))
+			{
+				return;
+			}
+			KeyChain = null;
+			existing.Dispose();
 		}
 
-		// The Coldcard HSM has no per-round or sat/vByte concept; the fee cap and the value-leak guard are
-		// both expressed as the self-transfer floor in the policy. The user reviews and approves the policy
-		// on the device once; afterwards coinjoin rounds sign unattended.
+		// The Coldcard HSM policy has no per-round or sat/vByte concept: the device-side guard is the
+		// self-transfer floor, while the user's round budget (ColdcardKeyChain) and mining fee rate cap
+		// (CoinJoinTrackerFactory clamps the round selection) are enforced client-side.
 		var accountPaths = new List<KeyPath> { KeyManager.SegwitAccountKeyPath };
 		if (KeyManager.TaprootExtPubKey is not null)
 		{
@@ -185,15 +192,35 @@ public class Wallet : BackgroundService
 		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
 		try
 		{
+			// The wallet's device, not just any Coldcard. The xfp arrives little-endian in the handshake.
+			if (KeyManager.MasterFingerprint is { } expectedFingerprint
+				&& !BitConverter.GetBytes(device.MasterFingerprint).SequenceEqual(expectedFingerprint.ToBytes()))
+			{
+				throw new InvalidOperationException("The connected Coldcard is not the device of this wallet. Connect the right Coldcard and try again.");
+			}
+
 			// Fail early with a clear message if this device's firmware can't run the policy (Mk3/older, Q).
 			ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(device.GetVersion());
 			await Task.Run(() => device.StartHsm(policyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
-			KeyChain = new ColdcardKeyChain(device, KeyManager);
+			KeyChain = new ColdcardKeyChain(device, KeyManager, TransactionStore, maxRounds);
 		}
 		catch
 		{
 			device.Dispose();
 			throw;
+		}
+	}
+
+	private static bool IsDeviceAlive(ColdcardKeyChain keyChain)
+	{
+		try
+		{
+			keyChain.Device.GetVersion();
+			return true;
+		}
+		catch
+		{
+			return false;
 		}
 	}
 

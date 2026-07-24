@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using NBitcoin;
 
@@ -84,15 +85,55 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public void StartHsm(string policyJson, CancellationToken cancellationToken)
 	{
+		if (GetHsmStatus().Active)
+		{
+			// HSM mode is a one-way trip until reboot, so a policy from an earlier session is still
+			// running. If it is not ours, signing gets refused by that policy rather than misbehaving.
+			return;
+		}
+
 		var data = Encoding.UTF8.GetBytes(policyJson);
 		var sha = UploadFile(data);
 
-		// 'hsms': length + sha of the uploaded policy. The device shows the policy for on-device approval.
+		// 'hsms': length + sha of the uploaded policy. The device replies immediately and then shows the
+		// policy on its screen; the decision has to be observed by polling the HSM status.
 		var request = new byte[40];
 		Encoding.ASCII.GetBytes("hsms").CopyTo(request, 0);
 		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)data.Length);
 		sha.CopyTo(request, 8);
-		_transport.SendReceive(request, timeoutMs: 120000); // waits for the user to approve on the device
+		_transport.SendReceive(request);
+
+		// 'approval_wait' while the story is on screen, 'active' once approved, neither means refused.
+		var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(3);
+		while (true)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			var status = GetHsmStatus();
+			if (status.Active)
+			{
+				return;
+			}
+			if (!status.ApprovalWait)
+			{
+				throw new ColdcardException("The HSM policy was refused on the device.");
+			}
+			if (DateTime.UtcNow > deadline)
+			{
+				throw new ColdcardException("Timed out waiting for the HSM policy approval on the device.");
+			}
+			Thread.Sleep(500);
+		}
+	}
+
+	/// <summary>The device's HSM state ('hsts' command): whether a policy is active, and whether one is
+	/// currently on screen waiting for the user's approval.</summary>
+	public (bool Active, bool ApprovalWait) GetHsmStatus()
+	{
+		var (_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("hsts"));
+		using var status = JsonDocument.Parse(payload);
+		return (
+			status.RootElement.TryGetProperty("active", out var active) && active.GetBoolean(),
+			status.RootElement.TryGetProperty("approval_wait", out var wait) && wait.GetBoolean());
 	}
 
 	/// <summary>
@@ -173,6 +214,10 @@ public sealed class ColdcardDevice : IDisposable
 			if (tag == "strx") // done: <I32s> length + sha
 			{
 				return (BinaryPrimitives.ReadUInt32LittleEndian(payload), payload[4..36]);
+			}
+			if (tag == "refu")
+			{
+				throw new ColdcardException("Signing was refused by the user or the HSM policy.");
 			}
 			// 'okay' (empty) means still working — poll again.
 			Thread.Sleep(250);

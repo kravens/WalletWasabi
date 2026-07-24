@@ -72,28 +72,43 @@ internal sealed class ColdcardHidWindows : IColdcardHid
 
 	public byte[]? ReadReport(int timeoutMs)
 	{
-		// The HID handle is opened without FILE_FLAG_OVERLAPPED, so ReadFile blocks. Bound it with a wait
-		// on the handle so a stalled device does not hang the caller.
-		if (WaitForSingleObject(_handle, (uint)Math.Max(0, timeoutMs)) != WAIT_OBJECT_0)
-		{
-			return null;
-		}
-
+		// The handle is synchronous, so ReadFile blocks until a report arrives. Waiting on the handle
+		// itself is useless (a file handle with no I/O in flight is always signaled), so the timeout is
+		// enforced by cancelling the blocked read from this thread with CancelIoEx.
+		//
 		// Windows requires the read buffer to be the HID InputReportByteLength, which always includes a
 		// leading report-id byte (0 for the Coldcard) before the 64 data bytes; a 64-byte buffer makes
 		// ReadFile fail with ERROR_INVALID_USER_BUFFER.
 		var buffer = new byte[ColdcardUsb.InputReportLength + 1];
-		if (!ReadFile(_handle, buffer, (uint)buffer.Length, out uint read, IntPtr.Zero))
+		var read = System.Threading.Tasks.Task.Run(() =>
 		{
-			throw new IOException($"Coldcard HID read failed (win32 error {Marshal.GetLastWin32Error()}).");
+			bool ok = ReadFile(_handle, buffer, (uint)buffer.Length, out uint count, IntPtr.Zero);
+			return (Ok: ok, Count: count, Error: ok ? 0 : Marshal.GetLastWin32Error());
+		});
+
+		if (!read.Wait(Math.Max(0, timeoutMs)))
+		{
+			CancelIoEx(_handle, IntPtr.Zero);
+			read.Wait(1000); // reap the cancelled read
+			return null;
 		}
-		if (read <= 1)
+
+		var (success, readCount, error) = read.Result;
+		if (!success)
+		{
+			if (error == ERROR_OPERATION_ABORTED)
+			{
+				return null;
+			}
+			throw new IOException($"Coldcard HID read failed (win32 error {error}).");
+		}
+		if (readCount <= 1)
 		{
 			return null;
 		}
 
 		// Strip the report-id byte; the caller sees the 64 data bytes the device sent.
-		return buffer[1..(int)read];
+		return buffer[1..(int)readCount];
 	}
 
 	public void Dispose() => _handle.Dispose();
@@ -195,7 +210,7 @@ internal sealed class ColdcardHidWindows : IColdcardHid
 	private const uint OPEN_EXISTING = 3;
 	private const uint DIGCF_PRESENT = 0x2;
 	private const uint DIGCF_DEVICEINTERFACE = 0x10;
-	private const uint WAIT_OBJECT_0 = 0x0;
+	private const int ERROR_OPERATION_ABORTED = 995;
 	private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
 	[StructLayout(LayoutKind.Sequential)]
@@ -247,5 +262,5 @@ internal sealed class ColdcardHidWindows : IColdcardHid
 	private static extern bool WriteFile(SafeFileHandle handle, byte[] buffer, uint bytesToWrite, out uint bytesWritten, IntPtr overlapped);
 
 	[DllImport("kernel32.dll", SetLastError = true)]
-	private static extern uint WaitForSingleObject(SafeFileHandle handle, uint milliseconds);
+	private static extern bool CancelIoEx(SafeFileHandle handle, IntPtr overlapped);
 }

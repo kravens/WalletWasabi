@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using WalletWasabi.Blockchain.TransactionOutputs;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.WabiSabi.Client.CoinJoin.Client;
 using WalletWasabi.WabiSabi.Client.RoundStateAwaiters;
 using WalletWasabi.WabiSabi.Coordinator.PostRequests;
@@ -42,6 +43,18 @@ public class CoinJoinTrackerFactory
 		// The only use-case when we set consolidation mode to true, when we are mixing to another wallet.
 		wallet.ConsolidationMode = outputWallet.WalletId != wallet.WalletId;
 
+		// The fee rate cap the user confirmed for a hardware signer also bounds which rounds we enter,
+		// so a wallet-level cap below the global one is actually enforced (the Coldcard HSM policy has
+		// no fee rate concept; for Trezor the device enforces it too, this just skips those rounds early).
+		var coinJoinConfiguration = _coinJoinConfiguration;
+		if (wallet.KeyManager.IsHardwareCoinJoinWallet())
+		{
+			coinJoinConfiguration = coinJoinConfiguration with
+			{
+				MaxCoinJoinMiningFeeRate = Math.Min(coinJoinConfiguration.MaxCoinJoinMiningFeeRate, wallet.KeyManager.TrezorCoinjoinMaxMiningFeeRate),
+			};
+		}
+
 		var coinSelector = CoinJoinCoinSelector.FromWallet(wallet);
 		var coinJoinClient = new CoinJoinClient(
 			ArenaRequestHandlerFactory,
@@ -49,7 +62,7 @@ public class CoinJoinTrackerFactory
 			outputWallet.OutputProvider,
 			_roundStatusProvider,
 			coinSelector,
-			_coinJoinConfiguration,
+			coinJoinConfiguration,
 			_liquidityClueProvider,
 			doNotRegisterInLastMinuteTimeLimit: TimeSpan.FromMinutes(1));
 

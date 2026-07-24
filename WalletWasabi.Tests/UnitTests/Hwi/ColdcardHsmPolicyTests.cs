@@ -10,6 +10,13 @@ namespace WalletWasabi.Tests.UnitTests.Hwi;
 public class ColdcardHsmPolicyTests
 {
 	[Fact]
+	public void DefaultFloorAllowsAtMostOnePercentLeakPerTransaction()
+	{
+		// Security-relevant default: a compromised host may leak at most (100 - floor)% per signed tx.
+		Assert.Equal(99.0, ColdcardHsmPolicy.DefaultMinSelfTransferPercent);
+	}
+
+	[Fact]
 	public void ComposesCoinjoinPolicy()
 	{
 		var segwit = new KeyPath("84'/0'/0'");
