@@ -134,7 +134,7 @@ public partial class WalletCoinjoinModel : ReactiveObject
 		}
 		catch (Exception e)
 		{
-			Logger.LogWarning($"Hardware coinjoin authorization failed: {e.Message}");
+			Logger.LogWarning($"Hardware coinjoin authorization failed: {e}");
 			TrezorAuthorization = TrezorAuthorizationStatus.Failed;
 			return false;
 		}

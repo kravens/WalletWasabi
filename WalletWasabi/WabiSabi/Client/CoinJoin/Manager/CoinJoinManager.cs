@@ -227,7 +227,8 @@ public class CoinJoinManager : BackgroundService
 		// also builds the wallet's key chain. The GUI does this from its Play dialog, but with no GUI
 		// (daemon / JSON-RPC) it must happen here, so a headless client can coinjoin too. The user still
 		// approves the rounds and fee cap physically on the device (hold-to-confirm) once per batch.
-		if (walletToStart.KeyManager.IsHardwareCoinJoinWallet() && walletToStart.KeyChain is null)
+		if (walletToStart.KeyManager.IsHardwareCoinJoinWallet()
+			&& walletToStart.KeyChain is null or ColdcardKeyChain { RoundsExhausted: true })
 		{
 			try
 			{

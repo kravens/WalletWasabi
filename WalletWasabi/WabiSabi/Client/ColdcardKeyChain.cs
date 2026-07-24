@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using NBitcoin;
 using WalletWasabi.Blockchain.Keys;
+using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Crypto;
 using WalletWasabi.Extensions;
 using WalletWasabi.Hwi.Coldcard;
@@ -19,7 +20,7 @@ namespace WalletWasabi.WabiSabi.Client;
 /// </summary>
 public class ColdcardKeyChain : IKeyChain, IDisposable
 {
-	public ColdcardKeyChain(ColdcardDevice device, KeyManager keyManager)
+	public ColdcardKeyChain(ColdcardDevice device, KeyManager keyManager, ITransactionStore transactionStore, int maxRounds)
 	{
 		if (!keyManager.IsHardwareWallet)
 		{
@@ -28,17 +29,31 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 
 		_device = device;
 		_keyManager = keyManager;
+		_transactionStore = transactionStore;
+		_maxRounds = maxRounds;
 	}
 
 	private readonly ColdcardDevice _device;
 	private readonly KeyManager _keyManager;
+	private readonly ITransactionStore _transactionStore;
+	private readonly int _maxRounds;
+	private int _roundsSigned;
 	private readonly object _signingLock = new();
 	private (uint256 TxId, Dictionary<OutPoint, WitScript> Witnesses)? _signedTransactionCache;
 
 	public ColdcardDevice Device => _device;
 
+	/// <summary>The device HSM policy has no round counter, so the user's round budget is enforced here:
+	/// once it is used up, no new round can be entered until the user authorizes again.</summary>
+	public bool RoundsExhausted => _roundsSigned >= _maxRounds;
+
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
+		if (RoundsExhausted)
+		{
+			throw new ColdcardException($"The authorized {_maxRounds} coinjoin rounds are used up. Authorize the Coldcard again to continue.");
+		}
+
 		var keyPath = _keyManager.TryGetKeyPath(destination.ScriptPubKey)
 			?? throw new InvalidOperationException($"The key path for '{destination.ScriptPubKey}' was not found.");
 
@@ -64,7 +79,11 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 			transaction = transaction.Clone();
 			var txInput = transaction.Inputs.AsIndexedInputs().FirstOrDefault(input => input.PrevOut == coin.Outpoint)
 				?? throw new InvalidOperationException("Missing input.");
-			txInput.WitScript = cache.Witnesses[coin.Outpoint];
+			if (!cache.Witnesses.TryGetValue(coin.Outpoint, out var witness))
+			{
+				throw new InvalidOperationException($"The device did not sign the input '{coin.Outpoint}'.");
+			}
+			txInput.WitScript = witness;
 			return transaction;
 		}
 	}
@@ -84,14 +103,26 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		}
 		psbt.AddKeyPaths(_keyManager);
 
+		// The device's HSM checks (fee limit, self-transfer floor) run on the input amounts the host
+		// claims in witness_utxo. Give it the full previous transactions of our inputs so it verifies our
+		// amounts instead of trusting them (closes the segwit v0 fee-overpayment shape for unattended
+		// signing). Foreign prev txs are unknown here and not needed — we don't sign those inputs.
+		psbt.AddPrevTxs(_transactionStore);
+
 		var ourOutpoints = transaction.Inputs.AsIndexedInputs()
 			.Where(input => _keyManager.TryGetKeyPath(spentOutputs[(int)input.Index].ScriptPubKey) is not null)
 			.Select(input => input.PrevOut)
 			.ToHashSet();
 
-		var signedBytes = _device.SignPsbt(psbt.ToBytes(), CancellationToken.None);
+		// Bounded, so a wedged device can't hold the signing lock forever.
+		using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+		var signedBytes = _device.SignPsbt(psbt.ToBytes(), timeout.Token);
 		var signedPsbt = PSBT.Load(signedBytes, network);
-		signedPsbt.Finalize();
+
+		// Only our inputs can finalize; the foreign ones are witness-utxo-only and unsigned, so a full
+		// Finalize() would throw on every multi-party round.
+		signedPsbt.TryFinalize(out _);
+		_roundsSigned++;
 
 		var witnesses = new Dictionary<OutPoint, WitScript>();
 		foreach (var input in signedPsbt.Inputs)
