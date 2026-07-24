@@ -1,4 +1,5 @@
 using WalletWasabi.Blockchain.TransactionOutputs;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.WabiSabi.Client.CoinJoin.Client;
 using WalletWasabi.WabiSabi.Client.CoinJoin.Manager;

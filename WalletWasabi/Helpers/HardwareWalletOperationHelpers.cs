@@ -47,12 +47,14 @@ public static class HardwareWalletOperationHelpers
 		var segwitExtPubKey = await client.GetXpubAsync(device.Model, device.Path, segwitAccountKeyPath, genCts.Token).ConfigureAwait(false);
 		var keyManager = KeyManager.CreateNewHardwareWalletWatchOnly(fingerPrint, segwitExtPubKey, null, null, null, network, walletFilePath);
 
-		if (enableCoinjoin && device.Model is HardwareWalletModels.Coldcard or HardwareWalletModels.Coldcard_Simulator)
+		// Vendors that sign from the wallet's default accounts (no SLIP-25 account to recognise them by)
+		// are recorded here; the standard HWI import above already read the segwit account, and isolation
+		// comes from the device-side policy. Trezor is left alone — its account shape identifies it.
+		// (Segwit only for now; taproot needs edge firmware and is a follow-up.)
+		var vendor = device.Model.VendorOf();
+		if (enableCoinjoin && vendor is not (HardwareCoinJoinVendor.None or HardwareCoinJoinVendor.Trezor))
 		{
-			// A Coldcard coinjoin wallet uses the default segwit account (no SLIP-25 like Trezor); isolation
-			// comes from the device HSM policy. Just mark it — the standard HWI import above already read the
-			// segwit account. (Segwit only for now; taproot needs edge firmware and is a follow-up.)
-			keyManager.IsColdcardCoinjoin = true;
+			keyManager.CoinJoinVendor = vendor;
 			keyManager.ToFile();
 		}
 
@@ -127,10 +129,16 @@ public static class HardwareWalletOperationHelpers
 			throw new InvalidOperationException("Hardware wallet not found. Connect and unlock the device, then try again.");
 		}
 
-		if (entry.Model is HardwareWalletModels.Coldcard or HardwareWalletModels.Coldcard_Simulator)
+		var vendor = entry.Model.VendorOf();
+		if (vendor is HardwareCoinJoinVendor.None)
 		{
-			// Coldcard coinjoins from the default segwit account (already imported) under an HSM policy; just mark it.
-			keyManager.IsColdcardCoinjoin = true;
+			throw new InvalidOperationException($"A {entry.Model} cannot act as a coinjoin remote signer.");
+		}
+
+		if (vendor is not HardwareCoinJoinVendor.Trezor)
+		{
+			// Signs from the default accounts (already imported) under a device-side policy; just record it.
+			keyManager.CoinJoinVendor = vendor;
 			keyManager.ToFile();
 			return;
 		}

@@ -7,6 +7,7 @@ using WalletWasabi.Fluent.Infrastructure;
 using WalletWasabi.Fluent.Models.Wallets;
 using WalletWasabi.Fluent.State;
 using WalletWasabi.Fluent.ViewModels.Wallets.Settings;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.WabiSabi.Client.CoinJoinProgressEvents;

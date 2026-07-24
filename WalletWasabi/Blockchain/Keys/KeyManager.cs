@@ -15,6 +15,7 @@ using WalletWasabi.Blockchain.BlockFilters;
 using WalletWasabi.CoinJoinProfiles;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Io;
 using WalletWasabi.Logging;
@@ -206,9 +207,12 @@ public class KeyManager
 	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal TrezorCoinjoinMaxMiningFeeRate { get; set; } = DefaultTrezorCoinjoinMaxMiningFeeRate;
 
-	/// <summary>Whether this hardware wallet is a Coldcard set up for coinjoin. Unlike Trezor (SLIP-25 account),
-	/// a Coldcard coinjoin wallet uses the default segwit/taproot accounts, so it needs an explicit marker.</summary>
-	public bool IsColdcardCoinjoin { get; set; }
+	/// <summary>Which hardware vendor signs this wallet's coinjoins. Vendors that keep coinjoin funds in the
+	/// wallet's default accounts (Coldcard, and the Krux/Passport work to come) cannot be recognised from a
+	/// key path the way a Trezor's SLIP-25 account can, so the vendor is recorded explicitly at import.
+	/// Left at <see cref="HardwareCoinJoinVendor.None"/> for a Trezor, which is still inferred from its
+	/// account shape so wallets imported before this field keep working.</summary>
+	public HardwareCoinJoinVendor CoinJoinVendor { get; set; }
 
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
@@ -815,7 +819,7 @@ public class KeyManager
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
 			("TrezorCoinjoinMaxRounds", Encode.Int(keyManager.TrezorCoinjoinMaxRounds)),
 			("TrezorCoinjoinMaxMiningFeeRate", Encode.Decimal(keyManager.TrezorCoinjoinMaxMiningFeeRate)),
-			("IsColdcardCoinjoin", Encode.Bool(keyManager.IsColdcardCoinjoin)),
+			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
 			("ChangeScriptPubKeyType", Encode.PreferredScriptPubKeyType(keyManager.ChangeScriptPubKeyType)),
@@ -856,7 +860,9 @@ public class KeyManager
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
 				TrezorCoinjoinMaxRounds = get.Optional("TrezorCoinjoinMaxRounds", Decode.Int, DefaultTrezorCoinjoinMaxRounds),
 				TrezorCoinjoinMaxMiningFeeRate = get.Optional("TrezorCoinjoinMaxMiningFeeRate", Decode.Decimal, DefaultTrezorCoinjoinMaxMiningFeeRate),
-				IsColdcardCoinjoin = get.Optional("IsColdcardCoinjoin", Decode.Bool, false),
+				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
+				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
+					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),
 				NonPrivateCoinIsolation = get.Optional("RedCoinIsolation", Decode.Bool, false),
 				DefaultReceiveScriptType = get.Optional("DefaultReceiveScriptType", Decode.ScriptPubKeyType, ScriptPubKeyType.TaprootBIP86),
 				ChangeScriptPubKeyType = get.Optional("ChangeScriptPubKeyType", Decode.PreferredScriptPubKeyType) ?? PreferredScriptPubKeyType.Unspecified.Instance,

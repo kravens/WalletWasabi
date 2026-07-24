@@ -1,6 +1,4 @@
 using WalletWasabi.Blockchain.Keys;
-using WalletWasabi.Hwi.Models;
-using WalletWasabi.Hwi.Trezor;
 
 namespace WalletWasabi.Hwi.Coldcard;
 
@@ -8,22 +6,8 @@ public static class ColdcardExtensions
 {
 	/// <summary>A Coldcard hardware wallet set up for coinjoin. Unlike Trezor it uses the default segwit and
 	/// taproot accounts (isolation comes from the device's HSM policy, not a separate SLIP-25 account), so it
-	/// is marked explicitly rather than inferred from a key path.</summary>
+	/// is recorded at import rather than inferred from a key path. The vendor-agnostic gates live in
+	/// <see cref="HardwareCoinJoin"/>; this stays for the genuinely Coldcard-specific branches.</summary>
 	public static bool IsColdcardCoinJoinWallet(this KeyManager keyManager) =>
-		keyManager.IsHardwareWallet && keyManager.IsColdcardCoinjoin;
-
-	/// <summary>Any hardware wallet acting as a coinjoin remote signer (Trezor or Coldcard). Used by the
-	/// vendor-agnostic gates (coinjoin authorization, music box, the reduced menu); vendor-specific behavior
-	/// (SLIP-25 account rules for Trezor) keeps using the per-vendor predicate.</summary>
-	public static bool IsHardwareCoinJoinWallet(this KeyManager keyManager) =>
-		keyManager.IsTrezorCoinJoinWallet() || keyManager.IsColdcardCoinJoinWallet();
-
-	/// <summary>Device models that can act as a coinjoin remote signer (canonical predicate for all vendors).</summary>
-	public static bool SupportsCoinJoin(this HardwareWalletModels model) =>
-		model is HardwareWalletModels.Trezor_T
-			or HardwareWalletModels.Trezor_T_Simulator
-			or HardwareWalletModels.Trezor_Safe_3
-			or HardwareWalletModels.Trezor_Safe_5
-			or HardwareWalletModels.Coldcard
-			or HardwareWalletModels.Coldcard_Simulator;
+		keyManager.GetCoinJoinVendor() == HardwareCoinJoinVendor.Coldcard;
 }

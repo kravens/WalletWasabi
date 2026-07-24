@@ -16,6 +16,7 @@ using WalletWasabi.Crypto.Randomness;
 using WalletWasabi.Extensions;
 using WalletWasabi.FeeRateEstimation;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
@@ -160,15 +161,14 @@ public class Wallet : BackgroundService
 	/// Authorizes coinjoin on whichever hardware wallet backs this coinjoin wallet, building its key chain.
 	/// Dispatches to the vendor-specific flow (Trezor on-device authorization, Coldcard HSM policy).
 	/// </summary>
-	public Task AuthorizeHardwareCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
-	{
-		if (KeyManager.IsColdcardCoinJoinWallet())
+	public Task AuthorizeHardwareCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken) =>
+		KeyManager.GetCoinJoinVendor() switch
 		{
-			return AuthorizeColdcardCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
-		}
-
-		return AuthorizeTrezorCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken);
-	}
+			HardwareCoinJoinVendor.Coldcard => AuthorizeColdcardCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken),
+			HardwareCoinJoinVendor.Trezor => AuthorizeTrezorCoinJoinAsync(coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken),
+			// A new vendor lands here: add the case and its IKeyChain, nothing else in the coinjoin flow moves.
+			var vendor => throw new NotSupportedException($"'{vendor}' cannot act as a coinjoin remote signer."),
+		};
 
 	private async Task AuthorizeColdcardCoinJoinAsync(string coordinatorIdentifier, int maxRounds, FeeRate maxMiningFeeRate, CancellationToken cancellationToken)
 	{
@@ -404,8 +404,8 @@ public class Wallet : BackgroundService
 		await WalletFilterProcessor.StopAsync(cancel).ConfigureAwait(false);
 		WalletFilterProcessor.Dispose();
 
-		(KeyChain as TrezorKeyChain)?.Dispose();
-		(KeyChain as ColdcardKeyChain)?.Dispose();
+		// Every device-backed key chain owns a USB/bridge handle; releasing it is vendor-agnostic.
+		(KeyChain as IDisposable)?.Dispose();
 
 		// Release the bridge we may have started for this wallet so HWI can use the device again.
 		if (KeyManager.IsTrezorCoinJoinWallet())
