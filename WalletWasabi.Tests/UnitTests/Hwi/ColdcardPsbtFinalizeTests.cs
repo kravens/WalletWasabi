@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using NBitcoin;
 using Xunit;
 
@@ -44,5 +46,71 @@ public class ColdcardPsbtFinalizeTests
 		Assert.False(psbt.TryFinalize(out _));
 		Assert.NotNull(psbt.Inputs[0].FinalScriptWitness);
 		Assert.Null(psbt.Inputs[1].FinalScriptWitness);
+	}
+
+	[Fact]
+	public void TryFinalizeFinalizesEveryOneOfOurInputs()
+	{
+		// A wallet contributes one input per round only while its coins are still "red" — the
+		// selector isolates those from each other. Once coins reach semi-private, several of ours
+		// land in the same round, and SignOnDevice must come back with a witness for each. The
+		// witness dictionary it builds is keyed by outpoint, so this also pins that our inputs stay
+		// distinguishable from the foreign ones when they are interleaved.
+		var network = Network.RegTest;
+		var ourKeys = new[] { new Key(), new Key(), new Key() };
+		var foreignKeys = new[] { new Key(), new Key() };
+
+		var coinjoin = network.CreateTransaction();
+		var fundings = new List<Transaction>();
+		var ourOutpoints = new List<OutPoint>();
+
+		// Interleave ours and theirs, so a bug that assumes a contiguous block of our inputs fails.
+		var owners = new[] { ourKeys[0], foreignKeys[0], ourKeys[1], foreignKeys[1], ourKeys[2] };
+		foreach (var (key, index) in owners.Select((k, i) => (k, i)))
+		{
+			var funding = network.CreateTransaction();
+			funding.Outputs.Add(Money.Coins(1m), key.PubKey.GetScriptPubKey(ScriptPubKeyType.Segwit));
+			fundings.Add(funding);
+			coinjoin.Inputs.Add(new OutPoint(funding, 0));
+			if (ourKeys.Contains(key))
+			{
+				ourOutpoints.Add(new OutPoint(funding, 0));
+			}
+		}
+
+		using var outputKey = new Key();
+		coinjoin.Outputs.Add(Money.Coins(4.99m), outputKey.PubKey.GetScriptPubKey(ScriptPubKeyType.Segwit));
+
+		var psbt = PSBT.FromTransaction(coinjoin, network);
+		for (int i = 0; i < psbt.Inputs.Count; i++)
+		{
+			psbt.Inputs[i].WitnessUtxo = fundings[i].Outputs[0];
+		}
+
+		// What the device returns: partial sigs on our three inputs, nothing on the foreign two.
+		foreach (var key in ourKeys)
+		{
+			foreach (var input in psbt.Inputs)
+			{
+				if (input.WitnessUtxo?.ScriptPubKey == key.PubKey.GetScriptPubKey(ScriptPubKeyType.Segwit))
+				{
+					input.Sign(key);
+				}
+			}
+		}
+
+		Assert.False(psbt.TryFinalize(out _));
+
+		var finalized = psbt.Inputs.Where(x => x.FinalScriptWitness is not null).Select(x => x.PrevOut).ToHashSet();
+		Assert.Equal(ourOutpoints.ToHashSet(), finalized);
+
+		foreach (var key in ourKeys)
+		{
+			key.Dispose();
+		}
+		foreach (var key in foreignKeys)
+		{
+			key.Dispose();
+		}
 	}
 }
