@@ -115,7 +115,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 	[JsonRpcMethod("importtrezorwallet", initializable: false)]
 	public async Task<object> ImportHardwareWalletAsync(string walletName, bool enableCoinjoin = true)
 	{
-		AssertNoTrezorCoinJoinInProgress();
+		AssertNoHardwareCoinJoinInProgress();
 		var walletFilePath = WalletGenerator.GetWalletFilePath(walletName, Global.WalletManager.WalletDirectories.WalletsDir);
 
 		// Reading a Trezor's SLIP-25 account asks for a confirmation on the device; give time for it.
@@ -136,7 +136,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 	public async Task<object> EnableCoinJoinAsync()
 	{
 		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
-		AssertNoTrezorCoinJoinInProgress();
+		AssertNoHardwareCoinJoinInProgress();
 
 		// Reading the SLIP-25 account asks for a confirmation on the device, give the user time for it.
 		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
@@ -152,10 +152,11 @@ public class WasabiJsonRpcService : IJsonRpcService
 	}
 
 	/// <summary>
-	/// Opening the device for an import steals the bridge session that a coinjoining Trezor wallet holds,
-	/// killing its authorization mid-round. Refuse instead of sabotaging the running coinjoin.
+	/// Opening a device for an import takes the USB channel a coinjoining wallet is holding - the bridge
+	/// session for a Trezor, the raw HID handle for a Coldcard - and kills its authorization mid-round.
+	/// Refuse instead of sabotaging the running coinjoin, whichever vendor is signing.
 	/// </summary>
-	private void AssertNoTrezorCoinJoinInProgress()
+	private void AssertNoHardwareCoinJoinInProgress()
 	{
 		if (Global.HostedServices.GetOrDefault<CoinJoinManager>() is not { } coinJoinManager)
 		{
@@ -163,10 +164,11 @@ public class WasabiJsonRpcService : IJsonRpcService
 		}
 
 		var busy = Global.WalletManager.GetWallets()
-			.FirstOrDefault(w => w.KeyManager.IsTrezorCoinJoinWallet() && coinJoinManager.GetCoinjoinClientState(w.WalletId) is not CoinJoinClientState.Idle);
+			.FirstOrDefault(w => w.KeyManager.IsHardwareCoinJoinWallet() && coinJoinManager.GetCoinjoinClientState(w.WalletId) is not CoinJoinClientState.Idle);
 		if (busy is not null)
 		{
-			throw new InvalidOperationException($"Wallet '{busy.WalletName}' is coinjoining with the Trezor. Stop it with stopcoinjoin first.");
+			throw new InvalidOperationException(
+				$"Wallet '{busy.WalletName}' is coinjoining with its {busy.KeyManager.GetCoinJoinVendor()}. Stop it with stopcoinjoin first.");
 		}
 	}
 
