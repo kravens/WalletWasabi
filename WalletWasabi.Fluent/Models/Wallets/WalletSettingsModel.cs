@@ -96,13 +96,14 @@ public partial class WalletSettingsModel : ReactiveObject
 	/// <summary>
 	/// Where the round budget and fee cap are actually enforced, which differs by vendor and must not be
 	/// misrepresented: a Trezor shows both on screen and enforces them itself, while a Coldcard's HSM
-	/// policy has no concept of either, so Wasabi enforces them and the device only guards value leaving
-	/// the wallet. Telling a Coldcard user their device confirms these limits would be a false claim.
+	/// policy has no concept of either, so Wasabi enforces them and the device only bounds how much value
+	/// can leave in one transaction. Telling a Coldcard user their device confirms these limits would be a
+	/// false claim, and so would implying the floor bounds the total — it applies per transaction.
 	/// </summary>
 	public string CoinJoinLimitsEnforcedBy => _keyManager.GetCoinJoinVendor() switch
 	{
 		HardwareCoinJoinVendor.Trezor => "Shown on the device and confirmed there; the device enforces both.",
-		HardwareCoinJoinVendor.Coldcard => "Enforced by Wasabi. The Coldcard's HSM policy has no round or fee-rate concept — on the device the guard is the self-transfer floor, which caps how much value can leave the wallet.",
+		HardwareCoinJoinVendor.Coldcard => "Enforced by Wasabi. The Coldcard's HSM policy has no round or fee-rate concept — on the device the guard is the self-transfer floor, which caps how much value can leave in any single transaction.",
 		_ => "Enforced by Wasabi for this device.",
 	};
 
