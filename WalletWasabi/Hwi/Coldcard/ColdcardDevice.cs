@@ -154,6 +154,30 @@ public sealed class ColdcardDevice : IDisposable
 		}
 	}
 
+	/// <summary>The policy's own words for the last refusal, if the device will tell us. Best-effort: the
+	/// refusal itself is the news, so a failure to read the reason must not replace it.</summary>
+	private string DescribeLastRefusal()
+	{
+		try
+		{
+			var (_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("hsts"));
+			using var status = JsonDocument.Parse(payload);
+			if (status.RootElement.TryGetProperty("last_refusal", out var reason)
+				&& reason.GetString() is { Length: > 0 } text)
+			{
+				return text.Contains("transaction count", StringComparison.OrdinalIgnoreCase)
+					? $"{text}. The authorized number of transactions is used up: reboot the Coldcard and authorize coinjoining again."
+					: text;
+			}
+		}
+		catch (Exception e)
+		{
+			Logger.LogDebug($"Could not read the Coldcard's refusal reason: {e.Message}");
+		}
+
+		return "Check the device screen for the reason.";
+	}
+
 	/// <summary>The firmware's AF_* address format constant (see its <c>public_constants.py</c>).</summary>
 	private static uint AddressFormatOf(ScriptPubKeyType scriptType) => scriptType switch
 	{
@@ -365,7 +389,11 @@ public sealed class ColdcardDevice : IDisposable
 			}
 			if (tag == "refu")
 			{
-				throw new ColdcardException("Signing was refused by the user or the HSM policy.");
+				// The policy records why it said no, and the reasons are all things the user has to act on:
+				// the self-transfer floor, an unlisted path, or the transaction count being used up (which
+				// needs a reboot, since an HSM session cannot be reset). Bare "refused" would send them
+				// looking in the wrong place.
+				throw new ColdcardException($"signing was refused by the device. {DescribeLastRefusal()}");
 			}
 			// 'okay' (empty) means still working — poll again.
 			Thread.Sleep(250);
