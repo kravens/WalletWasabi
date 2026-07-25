@@ -38,6 +38,11 @@ public partial class WalletCoinjoinModel : ReactiveObject
 	[AutoNotify] private bool _isCoinjoining;
 	[AutoNotify] private TrezorAuthorizationStatus _trezorAuthorization = TrezorAuthorizationStatus.Idle;
 
+	/// <summary>Why the last authorization failed, when the device told us something worth acting on.
+	/// A Coldcard reports things the user has to go and fix — HSM commands switched off, the wrong device
+	/// plugged in, firmware too old — and "press Play to retry" is a dead end for all of them.</summary>
+	[AutoNotify] private string? _authorizationError;
+
 	public WalletCoinjoinModel(IServices services, Wallet wallet, CoinJoinManager coinjoinManager, WalletSettingsModel settings)
 	{
 		_services = services;
@@ -111,6 +116,7 @@ public partial class WalletCoinjoinModel : ReactiveObject
 	public async Task<bool> AuthorizeHardwareAsync()
 	{
 		TrezorAuthorization = TrezorAuthorizationStatus.AwaitingConfirmation;
+		AuthorizationError = null;
 		try
 		{
 			await _wallet.AuthorizeHardwareCoinJoinAsync(
@@ -136,6 +142,11 @@ public partial class WalletCoinjoinModel : ReactiveObject
 		catch (Exception e)
 		{
 			Logger.LogWarning($"Hardware coinjoin authorization failed: {e}");
+
+			// ColdcardException and the wrong-device check carry text written for the user, naming the
+			// setting to change or the device to swap. Anything else is an internal failure whose message
+			// would not help, so those keep the generic wording.
+			AuthorizationError = e is ColdcardException or InvalidOperationException ? e.Message : null;
 			TrezorAuthorization = TrezorAuthorizationStatus.Failed;
 			return false;
 		}

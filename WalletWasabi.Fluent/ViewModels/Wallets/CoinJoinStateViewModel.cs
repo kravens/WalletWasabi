@@ -101,7 +101,9 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 							   TrezorAuthorizationStatus.Confirmed => TrezorConfirmedMessage,
 							   TrezorAuthorizationStatus.BridgeNotFound => TrezorBridgeNotFoundMessage,
 							   TrezorAuthorizationStatus.DeviceNotFound => TrezorNotFoundMessage,
-							   TrezorAuthorizationStatus.Failed => TrezorAuthorizationFailedMessage,
+							   // Prefer what the device actually said: "press Play to retry" is a dead end when
+							   // the fix is a setting on the Coldcard or a different device in the port.
+							   TrezorAuthorizationStatus.Failed => walletCoinjoinModel.AuthorizationError ?? TrezorAuthorizationFailedMessage,
 							   _ => CurrentStatus,
 						   };
 					   })
