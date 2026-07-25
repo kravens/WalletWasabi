@@ -30,7 +30,10 @@ public static class HardwareWalletOperationHelpers
 		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 		using var genCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancelToken);
 
-		if (enableCoinjoin && device.SupportsCoinJoin())
+		// Trezor ONLY: this reads a SLIP-25 account over the Trezor bridge, so it must be gated on the
+		// vendor and not on "can this device coinjoin". Gating it on the generic predicate sent Coldcards
+		// down the bridge path, where they failed with "No Trezor device found".
+		if (enableCoinjoin && device.Model.VendorOf() is HardwareCoinJoinVendor.Trezor)
 		{
 			// Coinjoin needs the SLIP-25 account, which only the bridge can read. Read the segwit account from the
 			// bridge in the same session too, so HWI and the bridge don't contend for the USB device. If the bridge
