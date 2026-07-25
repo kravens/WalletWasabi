@@ -9,11 +9,21 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// <c>SHA256(x ‖ y)</c> of the shared point. Traffic is then AES-256-CTR with the counter starting at zero,
 /// with an independent counter in each direction. Uses NBitcoin's secp256k1 and .NET AES — no new dependency.
 /// </summary>
-public sealed class CkccEncryption
+public sealed class CkccEncryption : IDisposable
 {
 	private readonly ECPrivKey _ephemeralKey;
 	private AesCtr? _encryptRequest;
 	private AesCtr? _decryptResponse;
+
+	/// <summary>Each session holds two AES instances and an ephemeral key. A connection used to last the
+	/// life of the process, but a link that loses sync is now replaced, so leaking a set per reconnect
+	/// would accumulate.</summary>
+	public void Dispose()
+	{
+		_encryptRequest?.Dispose();
+		_decryptResponse?.Dispose();
+		_ephemeralKey.Dispose();
+	}
 
 	public CkccEncryption()
 	{
@@ -66,9 +76,11 @@ public sealed class CkccEncryption
 
 	/// <summary>AES-256 in counter mode: a keystream from encrypting an incrementing 128-bit counter (from 0),
 	/// XORed with the data. A single instance is used one direction, keeping counter state across messages.</summary>
-	private sealed class AesCtr
+	private sealed class AesCtr : IDisposable
 	{
 		private readonly Aes _aes;
+
+		public void Dispose() => _aes.Dispose();
 		private readonly byte[] _counter = new byte[16];
 		private readonly byte[] _keystreamBlock = new byte[16];
 		private int _keystreamUsed = 16;

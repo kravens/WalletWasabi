@@ -36,8 +36,8 @@ public class ColdcardTransportTests
 	public void EcdhAndAesCtrRoundTrip()
 	{
 		// Two peers do the same ephemeral ECDH the device and host do; both must derive the same session key.
-		var host = new CkccEncryption();
-		var device = new CkccEncryption();
+		using var host = new CkccEncryption();
+		using var device = new CkccEncryption();
 		host.DeriveSessionKey(device.OurPublicKeyXY());
 		device.DeriveSessionKey(host.OurPublicKeyXY());
 
@@ -52,8 +52,8 @@ public class ColdcardTransportTests
 	public void AesCtrMatchesManualCounterMode()
 	{
 		// CTR keystream must be AES-ECB of the big-endian counter starting at 0, XORed with the data.
-		var host = new CkccEncryption();
-		var device = new CkccEncryption();
+		using var host = new CkccEncryption();
+		using var device = new CkccEncryption();
 		host.DeriveSessionKey(device.OurPublicKeyXY());
 		device.DeriveSessionKey(host.OurPublicKeyXY());
 

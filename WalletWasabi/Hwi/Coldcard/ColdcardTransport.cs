@@ -148,7 +148,11 @@ public sealed class ColdcardTransport : IDisposable
 		return true;
 	}
 
-	public void Dispose() => _hid.Dispose();
+	public void Dispose()
+	{
+		_encryption?.Dispose();
+		_hid.Dispose();
+	}
 }
 
 public class ColdcardException : Exception
