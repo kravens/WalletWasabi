@@ -36,8 +36,10 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 		// Coinjoin is opt-in: only offer it for models that can sign coinjoins on the device.
 		SupportsCoinjoin = device.SupportsCoinJoin();
 
-		// Only Trezor reaches the device through a bridge; Coldcard talks over USB directly.
-		_usesBridge = device.Model is not (HardwareWalletModels.Coldcard or HardwareWalletModels.Coldcard_Simulator);
+		// Only Trezor reaches the device through a bridge, so only a Trezor user should ever be told to
+		// install Trezor Suite. Asking the vendor rather than excluding known models keeps a future
+		// vendor from inheriting that prompt just because it is not a Coldcard.
+		_usesBridge = device.Model.VendorOf() is HardwareCoinJoinVendor.Trezor;
 
 		SetupCancel(enableCancel: false, enableCancelOnEscape: false, enableCancelOnPressed: false);
 

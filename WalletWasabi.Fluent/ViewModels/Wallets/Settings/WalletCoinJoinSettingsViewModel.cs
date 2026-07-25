@@ -51,6 +51,8 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_anonScoreTarget = _wallet.Settings.AnonScoreTarget.ToString();
 		_nonPrivateCoinIsolation = _wallet.Settings.NonPrivateCoinIsolation;
 		IsTrezorCoinJoinWallet = _wallet.Settings.IsTrezorCoinJoinWallet;
+		IsHardwareCoinJoinWallet = _wallet.Settings.IsHardwareCoinJoinWallet;
+		CoinJoinLimitsEnforcedBy = _wallet.Settings.CoinJoinLimitsEnforcedBy;
 		_trezorMaxRounds = _wallet.Settings.TrezorCoinjoinMaxRounds.ToString();
 		_trezorMaxMiningFeeRate = _wallet.Settings.TrezorCoinjoinMaxMiningFeeRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
@@ -129,6 +131,14 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	}
 
 	public bool IsTrezorCoinJoinWallet { get; }
+
+	/// <summary>The round budget and fee cap bind every device-signed wallet, so they are shown for all
+	/// of them — hiding them left Coldcard users with an invisible 5 sat/vByte cap they could not change.</summary>
+	public bool IsHardwareCoinJoinWallet { get; }
+
+	/// <summary>Who actually enforces those two limits, worded per vendor so the UI never implies a
+	/// device is guaranteeing something the host is doing.</summary>
+	public string CoinJoinLimitsEnforcedBy { get; } = "";
 
 	public ICommand SetAutoCoinJoin { get; }
 	public ICommand SetNonPrivateCoinIsolationCommand { get; }
