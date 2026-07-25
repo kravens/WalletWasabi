@@ -36,6 +36,14 @@ public class KeyManager
 	public const bool DefaultAutoCoinjoin = false;
 	public const bool DefaultRedCoinIsolation = false;
 	public const int DefaultTrezorCoinjoinMaxRounds = 50; // Failed/blame rounds also consume an authorized round, so leave headroom before the device asks again.
+	/// <summary>The Coldcard HSM floor: the minimum share of our own input value that must come back to
+	/// us, so at most (100 - this)% can leave in any one signed transaction. Adjustable because it has
+	/// little headroom in practice — legitimate rounds were observed landing at 96.7-98.9% when mining
+	/// fees were a real fraction of the coins being mixed, and a device that refuses everything with no
+	/// way to tune it looks broken. Lowering it widens what a compromised host could take per
+	/// transaction, so the device shows the value when the policy is approved.</summary>
+	public const double DefaultColdcardMinSelfTransferPercent = 99.0;
+
 	public const decimal DefaultTrezorCoinjoinMaxMiningFeeRate = 5m; // sat/vByte, the device refuses rounds above this cap; keep it tight so coinjoin never overpays on mainnet.
 
 	public const int AbsoluteMinGapLimit = 21;
@@ -206,6 +214,7 @@ public class KeyManager
 
 	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal TrezorCoinjoinMaxMiningFeeRate { get; set; } = DefaultTrezorCoinjoinMaxMiningFeeRate;
+	public double ColdcardMinSelfTransferPercent { get; set; } = DefaultColdcardMinSelfTransferPercent;
 
 	/// <summary>Which hardware vendor signs this wallet's coinjoins. Vendors that keep coinjoin funds in the
 	/// wallet's default accounts (Coldcard, and the Krux/Passport work to come) cannot be recognised from a
@@ -819,6 +828,7 @@ public class KeyManager
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
 			("TrezorCoinjoinMaxRounds", Encode.Int(keyManager.TrezorCoinjoinMaxRounds)),
 			("TrezorCoinjoinMaxMiningFeeRate", Encode.Decimal(keyManager.TrezorCoinjoinMaxMiningFeeRate)),
+			("ColdcardMinSelfTransferPercent", Encode.Decimal((decimal)keyManager.ColdcardMinSelfTransferPercent)),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
@@ -860,6 +870,7 @@ public class KeyManager
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
 				TrezorCoinjoinMaxRounds = get.Optional("TrezorCoinjoinMaxRounds", Decode.Int, DefaultTrezorCoinjoinMaxRounds),
 				TrezorCoinjoinMaxMiningFeeRate = get.Optional("TrezorCoinjoinMaxMiningFeeRate", Decode.Decimal, DefaultTrezorCoinjoinMaxMiningFeeRate),
+				ColdcardMinSelfTransferPercent = (double)get.Optional("ColdcardMinSelfTransferPercent", Decode.Decimal, (decimal)DefaultColdcardMinSelfTransferPercent),
 				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
 				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
 					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),

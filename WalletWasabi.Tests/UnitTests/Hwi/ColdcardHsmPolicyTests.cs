@@ -50,6 +50,18 @@ public class ColdcardHsmPolicyTests
 	}
 
 	[Fact]
+	public void TheFloorIsSettable()
+	{
+		// Adjustable because 99 has little headroom: legitimate rounds were seen landing at 96.7-98.9%
+		// when mining fees were a real fraction of the coins being mixed, and a device that refuses
+		// everything with no way to tune it looks broken.
+		var json = ColdcardHsmPolicy.Compose(new[] { new KeyPath("84'/0'/0'") }, minSelfTransferPercent: 97.5);
+
+		using var doc = JsonDocument.Parse(json);
+		Assert.Equal(97.5, doc.RootElement.GetProperty("rules")[0].GetProperty("min_pct_self_transfer").GetDouble());
+	}
+
+	[Fact]
 	public void TheCountIsOmittedWhenNotAskedFor()
 	{
 		// Firmware predating the rule rejects the whole policy over an unknown field, so the field must be

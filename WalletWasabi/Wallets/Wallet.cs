@@ -192,7 +192,7 @@ public class Wallet : BackgroundService
 		{
 			accountPaths.Add(KeyManager.TaprootAccountKeyPath);
 		}
-		var policyJson = ColdcardHsmPolicy.Compose(accountPaths, maxRounds);
+		var policyJson = ColdcardHsmPolicy.Compose(accountPaths, maxRounds, KeyManager.ColdcardMinSelfTransferPercent);
 
 		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
 		try
@@ -221,7 +221,7 @@ public class Wallet : BackgroundService
 					"This Coldcard's firmware predates the device-side transaction limit, so the round budget "
 					+ "is enforced by Wasabi alone. Update the firmware to have the device enforce it too.");
 
-				var withoutCount = ColdcardHsmPolicy.Compose(accountPaths);
+				var withoutCount = ColdcardHsmPolicy.Compose(accountPaths, minSelfTransferPercent: KeyManager.ColdcardMinSelfTransferPercent);
 				await Task.Run(() => device.StartHsm(withoutCount, cancellationToken), cancellationToken).ConfigureAwait(false);
 			}
 

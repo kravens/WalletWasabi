@@ -26,6 +26,7 @@ public partial class WalletSettingsModel : ReactiveObject
 	[AutoNotify] private int _anonScoreTarget;
 	[AutoNotify] private int _trezorCoinjoinMaxRounds;
 	[AutoNotify] private decimal _trezorCoinjoinMaxMiningFeeRate;
+	[AutoNotify] private double _coldcardMinSelfTransferPercent;
 	[AutoNotify] private bool _nonPrivateCoinIsolation;
 	[AutoNotify] private WalletId? _outputWalletId;
 	[AutoNotify] private ScriptType _defaultReceiveScriptType;
@@ -47,6 +48,7 @@ public partial class WalletSettingsModel : ReactiveObject
 		_anonScoreTarget = _keyManager.AnonScoreTarget;
 		_trezorCoinjoinMaxRounds = _keyManager.TrezorCoinjoinMaxRounds;
 		_trezorCoinjoinMaxMiningFeeRate = _keyManager.TrezorCoinjoinMaxMiningFeeRate;
+		_coldcardMinSelfTransferPercent = _keyManager.ColdcardMinSelfTransferPercent;
 		_nonPrivateCoinIsolation = _keyManager.NonPrivateCoinIsolation;
 
 		if (!isNewWallet)
@@ -72,7 +74,8 @@ public partial class WalletSettingsModel : ReactiveObject
 
 		this.WhenAnyValue(
 				x => x.TrezorCoinjoinMaxRounds,
-				x => x.TrezorCoinjoinMaxMiningFeeRate)
+				x => x.TrezorCoinjoinMaxMiningFeeRate,
+				x => x.ColdcardMinSelfTransferPercent)
 			.Skip(1)
 			.Do(_ => SetValues())
 			.Subscribe();
@@ -92,6 +95,9 @@ public partial class WalletSettingsModel : ReactiveObject
 	/// <summary>Any device-signed coinjoin wallet. The round budget and fee-rate cap apply to all of
 	/// them, so the settings that control those must be visible for all of them.</summary>
 	public bool IsHardwareCoinJoinWallet => _keyManager.IsHardwareCoinJoinWallet();
+
+	/// <summary>Only a Coldcard enforces a self-transfer floor, so only it shows that setting.</summary>
+	public bool IsColdcardCoinJoinWallet => _keyManager.GetCoinJoinVendor() == HardwareCoinJoinVendor.Coldcard;
 
 	/// <summary>
 	/// Where the round budget and fee cap are actually enforced, which differs by vendor and must not be
@@ -140,6 +146,7 @@ public partial class WalletSettingsModel : ReactiveObject
 		_keyManager.AnonScoreTarget = AnonScoreTarget;
 		_keyManager.TrezorCoinjoinMaxRounds = TrezorCoinjoinMaxRounds;
 		_keyManager.TrezorCoinjoinMaxMiningFeeRate = TrezorCoinjoinMaxMiningFeeRate;
+		_keyManager.ColdcardMinSelfTransferPercent = ColdcardMinSelfTransferPercent;
 		_keyManager.NonPrivateCoinIsolation = NonPrivateCoinIsolation;
 		_keyManager.DefaultSendWorkflow = DefaultSendWorkflow;
 		_keyManager.DefaultReceiveScriptType = ScriptType.ToScriptPubKeyType(DefaultReceiveScriptType);

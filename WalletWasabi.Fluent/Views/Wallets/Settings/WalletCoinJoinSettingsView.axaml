@@ -109,5 +109,11 @@
       <TextBlock Text="Max mining fee rate (sat/vByte)" />
       <TextBox Classes="standalone" Text="{Binding TrezorMaxMiningFeeRate}" DockPanel.Dock="Right" Watermark="e.g. 200" MaxLength="6" />
     </DockPanel>
+
+    <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"
+               ToolTip.Tip="The share of your own value the Coldcard requires back in a round, enforced on the device. At 99% at most 1% of a transaction can leave the wallet. Lower it only if rounds are being refused because mining fees are large next to the coins being mixed — the device shows the value when you approve the policy.">
+      <TextBlock Text="Minimum self-transfer (%)" />
+      <TextBox Classes="standalone" Text="{Binding ColdcardMinSelfTransfer}" DockPanel.Dock="Right" Watermark="99" MaxLength="5" />
+    </DockPanel>
   </StackPanel>
 </UserControl>
