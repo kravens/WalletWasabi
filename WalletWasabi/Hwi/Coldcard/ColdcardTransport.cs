@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using WalletWasabi.Logging;
 
 namespace WalletWasabi.Hwi.Coldcard;
 
@@ -12,11 +13,6 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </summary>
 public sealed class ColdcardTransport : IDisposable
 {
-	/// <summary>Every tag the firmware can put at the front of a reply. Anything else means we are not
-	/// reading a real reply at all: the AES-CTR streams have lost step, so the "plaintext" is noise.</summary>
-	private static readonly HashSet<string> KnownTags =
-		["asci", "biny", "err_", "refu", "okay", "mypb", "fram", "busy", "smrx", "strx"];
-
 	private readonly IColdcardHid _hid;
 	private CkccEncryption? _encryption;
 
@@ -68,6 +64,9 @@ public sealed class ColdcardTransport : IDisposable
 
 	private (string Tag, byte[] Payload) SendReceiveRaw(byte[] message, bool encrypt, int timeoutMs = 15000)
 	{
+		var command = message.Length >= 4 ? Encoding.ASCII.GetString(message, 0, 4) : "????";
+		var startedAt = DateTimeOffset.UtcNow;
+
 		byte[] response;
 		try
 		{
@@ -79,11 +78,14 @@ public sealed class ColdcardTransport : IDisposable
 
 			response = CkccFraming.ReadResponse(() => _hid.ReadReport(timeoutMs));
 		}
-		catch (IOException)
+		catch (IOException e)
 		{
 			// A half-finished exchange is exactly what puts the two counters out of step, and the reply we
 			// gave up on may still arrive to be misread as the answer to the next request.
 			IsHealthy = false;
+			Logger.LogDebug(
+				$"ckcc '{command}' ({message.Length} B) failed after "
+				+ $"{(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds:0} ms: {e.Message}");
 			throw;
 		}
 
@@ -99,9 +101,14 @@ public sealed class ColdcardTransport : IDisposable
 		}
 
 		string tag = Encoding.ASCII.GetString(response, 0, 4);
-		if (!KnownTags.Contains(tag))
+		Logger.LogDebug(
+			$"ckcc '{command}' ({message.Length} B) -> '{tag}' ({response.Length} B) in "
+			+ $"{(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds:0} ms");
+
+		if (!LooksLikeATag(response))
 		{
 			IsHealthy = false;
+			Logger.LogDebug($"ckcc unreadable reply, first 16 bytes: {Convert.ToHexString(response[..Math.Min(16, response.Length)])}");
 			throw new ColdcardException(
 				"the reply could not be read, so the encrypted link has lost sync. Reconnecting to the device.");
 		}
@@ -112,6 +119,33 @@ public sealed class ColdcardTransport : IDisposable
 			throw new ColdcardException(Encoding.UTF8.GetString(payload));
 		}
 		return (tag, payload);
+	}
+
+	/// <summary>
+	/// Whether a reply even looks like a reply. Every firmware tag is four lower-case ASCII characters
+	/// (<c>asci</c>, <c>biny</c>, <c>okay</c>, <c>err_</c>, <c>int1</c>, <c>strx</c>, …), while a reply read
+	/// off a desynchronised AES-CTR stream is uniformly random bytes and matches this about once in 2500.
+	/// <para>
+	/// Deliberately a character test and not a list of known tags. A list is the obvious implementation and
+	/// it is a trap: the first tag missing from it turns a perfectly good reply into a fake "lost sync" and
+	/// breaks real work. That happened here — <c>int1</c>, the reply to every upload block, is assembled
+	/// with <c>pack()</c> rather than written as a literal, so it was missed and uploads stopped working.
+	/// Anything plausible is passed through for the caller to judge; only clear binary noise is rejected.
+	/// </para>
+	/// </summary>
+	private static bool LooksLikeATag(byte[] response)
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			byte b = response[i];
+			bool ok = (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '_';
+			if (!ok)
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	public void Dispose() => _hid.Dispose();

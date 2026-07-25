@@ -89,17 +89,40 @@ public class ColdcardTransportTests
 	private static IEnumerable<byte[]> Framed(string body) =>
 		CkccFraming.PackRequest(Encoding.ASCII.GetBytes(body), encrypted: false).Select(r => r[1..]).ToList();
 
+	private static IEnumerable<byte[]> FramedBytes(byte[] body) =>
+		CkccFraming.PackRequest(body, encrypted: false).Select(r => r[1..]).ToList();
+
 	[Fact]
 	public void AnUnreadableReplyIsTreatedAsLostSync()
 	{
-		// What a desynchronised stream really yields: plausible bytes, meaningless tag.
-		using var fake = new FakeHid(Framed("§¶xQnonsense"));
+		// What a desynchronised stream really yields: uniformly random bytes.
+		using var fake = new FakeHid(FramedBytes([0x9f, 0x03, 0xe2, 0x7b, 0x11, 0x42]));
 		using var transport = new ColdcardTransport(fake);
 
 		var ex = Assert.Throws<ColdcardException>(() => transport.SendReceive(Encoding.ASCII.GetBytes("vers")));
 
 		Assert.Contains("lost sync", ex.Message);
 		Assert.False(transport.IsHealthy);
+	}
+
+	[Theory]
+	[InlineData("int1")]   // every upload block; built with pack(), so easy to miss
+	[InlineData("strx")]   // signing finished
+	[InlineData("smrx")]   // message signing finished
+	[InlineData("busy")]
+	[InlineData("okay")]
+	[InlineData("zzzz")]   // not a tag we know, but plainly a tag: pass it to the caller
+	public void PlausibleTagsAreNotMistakenForLostSync(string tag)
+	{
+		// A list of known tags is the trap here: the first one missing from it turns a good reply into a
+		// fake "lost sync" and breaks real work. int1 did exactly that and stopped uploads dead.
+		using var fake = new FakeHid(Framed(tag + "body"));
+		using var transport = new ColdcardTransport(fake);
+
+		var (seen, _) = transport.SendReceive(Encoding.ASCII.GetBytes("vers"));
+
+		Assert.Equal(tag, seen);
+		Assert.True(transport.IsHealthy);
 	}
 
 	[Fact]
