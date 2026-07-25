@@ -38,6 +38,8 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _trezorMaxRounds;
 	[AutoNotify] private string _trezorMaxMiningFeeRate;
 	[AutoNotify] private string _coldcardMinSelfTransfer;
+	[AutoNotify] private string _coldcardMaxSatsLeaving;
+	[AutoNotify] private string _coldcardMaxTxnPerPeriod;
 	[AutoNotify] private bool _isOutputWalletSelectionEnabled = true;
 	[AutoNotify] private IWalletModel _selectedOutputWallet;
 	[AutoNotify] private ReadOnlyObservableCollection<IWalletModel> _wallets = ReadOnlyObservableCollection<IWalletModel>.Empty;
@@ -58,6 +60,8 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_trezorMaxMiningFeeRate = _wallet.Settings.TrezorCoinjoinMaxMiningFeeRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		IsColdcardCoinJoinWallet = _wallet.Settings.IsColdcardCoinJoinWallet;
 		_coldcardMinSelfTransfer = _wallet.Settings.ColdcardMinSelfTransferPercent.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		_coldcardMaxSatsLeaving = _wallet.Settings.ColdcardMaxSatsLeaving.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		_coldcardMaxTxnPerPeriod = _wallet.Settings.ColdcardMaxTransactionsPerPeriod.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
 		_selectedOutputWallet = UiContext.WalletRepository.Wallets.Items.First(x => x.Id == _wallet.Settings.OutputWalletId);
 
@@ -107,6 +111,8 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		this.ValidateProperty(x => x.TrezorMaxRounds, ValidateTrezorMaxRounds);
 		this.ValidateProperty(x => x.TrezorMaxMiningFeeRate, ValidateTrezorMaxMiningFeeRate);
 		this.ValidateProperty(x => x.ColdcardMinSelfTransfer, ValidateColdcardMinSelfTransfer);
+		this.ValidateProperty(x => x.ColdcardMaxSatsLeaving, ValidateColdcardMaxSatsLeaving);
+		this.ValidateProperty(x => x.ColdcardMaxTxnPerPeriod, ValidateColdcardMaxTxnPerPeriod);
 
 		this.WhenAnyValue(x => x.PlebStopThreshold)
 			.Skip(1)
@@ -231,6 +237,35 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		else
 		{
 			errors.Add(ErrorSeverity.Error, "Must be between 50 and 99.9 percent.");
+		}
+	}
+
+	private void ValidateColdcardMaxSatsLeaving(IValidationErrors errors)
+	{
+		// A round costs the wallet its fee share, so a cap under a few thousand sats would refuse
+		// everything. The upper end is a whole bitcoin, past which the cap stops being a cap.
+		if (long.TryParse(ColdcardMaxSatsLeaving, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var sats)
+			&& sats is >= 1_000 and <= 100_000_000)
+		{
+			_wallet.Settings.ColdcardMaxSatsLeaving = sats;
+			_wallet.Settings.Save();
+		}
+		else
+		{
+			errors.Add(ErrorSeverity.Error, "Must be between 1,000 and 100,000,000 sats.");
+		}
+	}
+
+	private void ValidateColdcardMaxTxnPerPeriod(IValidationErrors errors)
+	{
+		if (int.TryParse(ColdcardMaxTxnPerPeriod, out var count) && count is >= 1 and <= 500)
+		{
+			_wallet.Settings.ColdcardMaxTransactionsPerPeriod = count;
+			_wallet.Settings.Save();
+		}
+		else
+		{
+			errors.Add(ErrorSeverity.Error, "Must be a whole number between 1 and 500.");
 		}
 	}
 

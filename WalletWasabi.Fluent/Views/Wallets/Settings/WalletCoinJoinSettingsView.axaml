@@ -111,9 +111,21 @@
     </DockPanel>
 
     <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"
-               ToolTip.Tip="The share of your own value the Coldcard requires back in a round, enforced on the device. At 99% at most 1% of a transaction can leave the wallet. Lower it only if rounds are being refused because mining fees are large next to the coins being mixed — the device shows the value when you approve the policy.">
+               ToolTip.Tip="The share of your own value the Coldcard requires back in a round. A share alone is the wrong shape for this: mining fees are a large slice of a small coin and a trivial slice of a big one, so a percentage tight enough to protect large amounts refuses ordinary rounds on small ones. It works with the amount limit below, which is what guards large wallets.">
       <TextBlock Text="Minimum self-transfer (%)" />
-      <TextBox Classes="standalone" Text="{Binding ColdcardMinSelfTransfer}" DockPanel.Dock="Right" Watermark="99" MaxLength="5" />
+      <TextBox Classes="standalone" Text="{Binding ColdcardMinSelfTransfer}" DockPanel.Dock="Right" Watermark="95" MaxLength="5" />
+    </DockPanel>
+
+    <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"
+               ToolTip.Tip="The most of your own value the device will let leave in one transaction — your share of the mining fee, plus anything lost. This is the limit that protects a large wallet, where a percentage would allow far more than you would accept. Raise it only if rounds are refused at realistic fee rates.">
+      <TextBlock Text="Max value leaving per transaction (sats)" />
+      <TextBox Classes="standalone" Text="{Binding ColdcardMaxSatsLeaving}" DockPanel.Dock="Right" Watermark="100000" MaxLength="9" />
+    </DockPanel>
+
+    <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"
+               ToolTip.Tip="How many transactions the device will sign per hour. Every round costs you a fee share even when the coinjoin is honest, so this bounds how fast a coordinator proposing rounds back to back can farm those fees. The total budget above bounds the session; this bounds the burst.">
+      <TextBlock Text="Max transactions per hour" />
+      <TextBox Classes="standalone" Text="{Binding ColdcardMaxTxnPerPeriod}" DockPanel.Dock="Right" Watermark="6" MaxLength="3" />
     </DockPanel>
   </StackPanel>
 </UserControl>

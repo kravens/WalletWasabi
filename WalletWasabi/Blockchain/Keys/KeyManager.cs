@@ -16,6 +16,7 @@ using WalletWasabi.CoinJoinProfiles;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Io;
 using WalletWasabi.Logging;
@@ -42,7 +43,7 @@ public class KeyManager
 	/// fees were a real fraction of the coins being mixed, and a device that refuses everything with no
 	/// way to tune it looks broken. Lowering it widens what a compromised host could take per
 	/// transaction, so the device shows the value when the policy is approved.</summary>
-	public const double DefaultColdcardMinSelfTransferPercent = 99.0;
+	public const double DefaultColdcardMinSelfTransferPercent = 95.0;
 
 	public const decimal DefaultTrezorCoinjoinMaxMiningFeeRate = 5m; // sat/vByte, the device refuses rounds above this cap; keep it tight so coinjoin never overpays on mainnet.
 
@@ -215,6 +216,9 @@ public class KeyManager
 	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal TrezorCoinjoinMaxMiningFeeRate { get; set; } = DefaultTrezorCoinjoinMaxMiningFeeRate;
 	public double ColdcardMinSelfTransferPercent { get; set; } = DefaultColdcardMinSelfTransferPercent;
+	public long ColdcardMaxSatsLeaving { get; set; } = ColdcardHsmPolicy.DefaultMaxSatsLeaving;
+	public int ColdcardMaxTransactionsPerPeriod { get; set; } = ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod;
+	public int ColdcardPeriodMinutes { get; set; } = ColdcardHsmPolicy.DefaultPeriodMinutes;
 
 	/// <summary>Which hardware vendor signs this wallet's coinjoins. Vendors that keep coinjoin funds in the
 	/// wallet's default accounts (Coldcard, and the Krux/Passport work to come) cannot be recognised from a
@@ -829,6 +833,9 @@ public class KeyManager
 			("TrezorCoinjoinMaxRounds", Encode.Int(keyManager.TrezorCoinjoinMaxRounds)),
 			("TrezorCoinjoinMaxMiningFeeRate", Encode.Decimal(keyManager.TrezorCoinjoinMaxMiningFeeRate)),
 			("ColdcardMinSelfTransferPercent", Encode.Decimal((decimal)keyManager.ColdcardMinSelfTransferPercent)),
+			("ColdcardMaxSatsLeaving", Encode.Int((int)keyManager.ColdcardMaxSatsLeaving)),
+			("ColdcardMaxTransactionsPerPeriod", Encode.Int(keyManager.ColdcardMaxTransactionsPerPeriod)),
+			("ColdcardPeriodMinutes", Encode.Int(keyManager.ColdcardPeriodMinutes)),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
@@ -871,6 +878,9 @@ public class KeyManager
 				TrezorCoinjoinMaxRounds = get.Optional("TrezorCoinjoinMaxRounds", Decode.Int, DefaultTrezorCoinjoinMaxRounds),
 				TrezorCoinjoinMaxMiningFeeRate = get.Optional("TrezorCoinjoinMaxMiningFeeRate", Decode.Decimal, DefaultTrezorCoinjoinMaxMiningFeeRate),
 				ColdcardMinSelfTransferPercent = (double)get.Optional("ColdcardMinSelfTransferPercent", Decode.Decimal, (decimal)DefaultColdcardMinSelfTransferPercent),
+				ColdcardMaxSatsLeaving = get.Optional("ColdcardMaxSatsLeaving", Decode.Int, (int)ColdcardHsmPolicy.DefaultMaxSatsLeaving),
+				ColdcardMaxTransactionsPerPeriod = get.Optional("ColdcardMaxTransactionsPerPeriod", Decode.Int, ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod),
+				ColdcardPeriodMinutes = get.Optional("ColdcardPeriodMinutes", Decode.Int, ColdcardHsmPolicy.DefaultPeriodMinutes),
 				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
 				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
 					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),

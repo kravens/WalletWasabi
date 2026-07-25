@@ -9,24 +9,34 @@ namespace WalletWasabi.Tests.UnitTests.Hwi;
 
 public class ColdcardHsmPolicyTests
 {
-	[Fact]
-	public void DefaultFloorAllowsAtMostOnePercentLeakPerTransaction()
+	private static readonly KeyPath Segwit = new("84'/0'/0'");
+	private static readonly KeyPath Taproot = new("86'/0'/0'");
+
+	private static JsonElement Rule(string json)
 	{
-		// Security-relevant default: a compromised host may leak at most (100 - floor)% per signed tx.
-		Assert.Equal(99.0, ColdcardHsmPolicy.DefaultMinSelfTransferPercent);
+		using var doc = JsonDocument.Parse(json);
+		return doc.RootElement.GetProperty("rules")[0].Clone();
+	}
+
+	[Fact]
+	public void TheDefaultsGuardBothEndsOfTheScale()
+	{
+		// A ratio alone is the wrong shape: what it permits scales with the amount, while mining fees
+		// scale the other way. The floor is only safe at 95 because the absolute cap sits beside it, and
+		// the pair is what makes the relaxed ratio defensible — see FloorWithoutAbsoluteCap.
+		Assert.Equal(95.0, ColdcardHsmPolicy.DefaultMinSelfTransferPercent);
+		Assert.Equal(99.0, ColdcardHsmPolicy.FloorWithoutAbsoluteCap);
+		Assert.Equal(100_000, ColdcardHsmPolicy.DefaultMaxSatsLeaving);
 	}
 
 	[Fact]
 	public void ComposesCoinjoinPolicy()
 	{
-		var segwit = new KeyPath("84'/0'/0'");
-		var taproot = new KeyPath("86'/0'/0'");
+		var json = ColdcardHsmPolicy.Compose([Segwit, Taproot], new ColdcardHsmPolicy.ColdcardLimits());
 
-		var json = ColdcardHsmPolicy.Compose(new[] { segwit, taproot }, minSelfTransferPercent: 95.0);
 		using var doc = JsonDocument.Parse(json);
 		var root = doc.RootElement;
 
-		// The value-leak guard: min_pct_self_transfer on the single rule.
 		Assert.True(root.GetProperty("warnings_ok").GetBoolean());
 		Assert.Equal(95.0, root.GetProperty("rules")[0].GetProperty("min_pct_self_transfer").GetDouble());
 
@@ -39,37 +49,47 @@ public class ColdcardHsmPolicyTests
 	}
 
 	[Fact]
-	public void TheRoundBudgetIsPutOnTheDeviceWhenAskedFor()
+	public void EveryDeviceSideLimitReachesThePolicy()
 	{
-		// The floor alone caps a single transaction. max_txn is what bounds the total, and it has to be in
-		// the policy the device approves, not only in the client-side counter a compromised host controls.
-		var json = ColdcardHsmPolicy.Compose(new[] { new KeyPath("84'/0'/0'") }, maxTransactions: 50);
+		// All four are enforced by the device. If any silently failed to serialise, the limit would exist
+		// only in the UI while the device enforced nothing.
+		var json = ColdcardHsmPolicy.Compose([Segwit], new ColdcardHsmPolicy.ColdcardLimits(
+			MinSelfTransferPercent: 97.5,
+			MaxSatsLeaving: 250_000,
+			MaxTransactions: 50,
+			MaxTransactionsPerPeriod: 4,
+			PeriodMinutes: 30));
 
+		var rule = Rule(json);
+		Assert.Equal(97.5, rule.GetProperty("min_pct_self_transfer").GetDouble());
+		Assert.Equal(250_000, rule.GetProperty("max_sats_leaving").GetInt64());
+		Assert.Equal(50, rule.GetProperty("max_txn").GetInt32());
+		Assert.Equal(4, rule.GetProperty("max_txn_per_period").GetInt32());
+
+		// The device refuses a policy that measures something per period without defining one.
 		using var doc = JsonDocument.Parse(json);
-		Assert.Equal(50, doc.RootElement.GetProperty("rules")[0].GetProperty("max_txn").GetInt32());
+		Assert.Equal(30, doc.RootElement.GetProperty("period").GetInt32());
 	}
 
 	[Fact]
-	public void TheFloorIsSettable()
+	public void OmittedLimitsAreAbsentRatherThanZero()
 	{
-		// Adjustable because 99 has little headroom: legitimate rounds were seen landing at 96.7-98.9%
-		// when mining fees were a real fraction of the coins being mixed, and a device that refuses
-		// everything with no way to tune it looks broken.
-		var json = ColdcardHsmPolicy.Compose(new[] { new KeyPath("84'/0'/0'") }, minSelfTransferPercent: 97.5);
+		// Firmware predating a field rejects the whole policy over the unknown key, so the fallback path
+		// depends on absent meaning absent. A zero would also read as "allow nothing" if it were accepted.
+		var json = ColdcardHsmPolicy.Compose([Segwit], new ColdcardHsmPolicy.ColdcardLimits(
+			MinSelfTransferPercent: ColdcardHsmPolicy.FloorWithoutAbsoluteCap,
+			MaxSatsLeaving: null,
+			MaxTransactions: null,
+			MaxTransactionsPerPeriod: null));
+
+		var rule = Rule(json);
+		Assert.Equal(99.0, rule.GetProperty("min_pct_self_transfer").GetDouble());
+		Assert.False(rule.TryGetProperty("max_sats_leaving", out _));
+		Assert.False(rule.TryGetProperty("max_txn", out _));
+		Assert.False(rule.TryGetProperty("max_txn_per_period", out _));
 
 		using var doc = JsonDocument.Parse(json);
-		Assert.Equal(97.5, doc.RootElement.GetProperty("rules")[0].GetProperty("min_pct_self_transfer").GetDouble());
-	}
-
-	[Fact]
-	public void TheCountIsOmittedWhenNotAskedFor()
-	{
-		// Firmware predating the rule rejects the whole policy over an unknown field, so the field must be
-		// absent rather than present-and-zero for the fallback path to work.
-		var json = ColdcardHsmPolicy.Compose(new[] { new KeyPath("84'/0'/0'") });
-
-		using var doc = JsonDocument.Parse(json);
-		Assert.False(doc.RootElement.GetProperty("rules")[0].TryGetProperty("max_txn", out _));
+		Assert.False(doc.RootElement.TryGetProperty("period", out _));
 	}
 
 	[Theory]

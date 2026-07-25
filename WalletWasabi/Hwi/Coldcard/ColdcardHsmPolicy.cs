@@ -15,49 +15,84 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </summary>
 public static class ColdcardHsmPolicy
 {
-	/// <summary>Default minimum self-transfer percentage. A legitimate round keeps ~99.5%+ of the wallet's
-	/// value (coordinator fee ≤ 0.3%, mining fee share well under that), so 99% is tight with a little
-	/// headroom. The flip side is intentional: a round where our fees would exceed 1% (tiny coins at high
-	/// fee rates, or value lost to failed output registrations) gets refused by the device.
-	/// <para>
-	/// On its own this bounds the leak per <em>signed transaction</em>, not in total: a host that had been
-	/// taken over could keep presenting fresh 99%-self-transfer coinjoins and skim 1% each time. That is why
-	/// the policy also carries <c>max_txn</c>, so the device counts the transactions it signs instead of
-	/// trusting <c>ColdcardKeyChain.RoundsExhausted</c>, which lives in the very process such an attacker
-	/// controls. The policy's existing velocity limits cannot serve here: <c>per_period</c> and
-	/// <c>max_amount</c> are both measured against non-change outputs, which in a coinjoin are the other
-	/// participants' outputs, so any limit tight enough to matter would refuse honest rounds.
-	/// </para></summary>
-	public const double DefaultMinSelfTransferPercent = 99.0;
+	/// <summary>The share of our own input value that must come back to us. On its own a ratio is the
+	/// wrong shape for this job: what it permits scales with the amount being mixed, while mining fees
+	/// scale the other way — a large share of a small coin, a trivial share of a big one. A percentage
+	/// tight enough to protect large amounts therefore refuses ordinary rounds on small ones, which is
+	/// what 99% did on hardware (legitimate rounds landing at 96.7–98.9%). It is safe to relax to 95%
+	/// only because <see cref="DefaultMaxSatsLeaving"/> bounds the absolute loss alongside it.</summary>
+	public const double DefaultMinSelfTransferPercent = 95.0;
 
-	/// <param name="maxTransactions">How many transactions this authorization is good for, enforced by the
-	/// device. Pass <c>null</c> for a Coldcard whose firmware predates the <c>max_txn</c> rule — it would
-	/// reject the whole policy over an unknown field, and the client-side budget still applies.</param>
-	public static string Compose(
-		IEnumerable<KeyPath> accountPaths,
-		int? maxTransactions = null,
-		double minSelfTransferPercent = DefaultMinSelfTransferPercent)
+	/// <summary>The floor to use when the device cannot enforce an absolute cap. Without
+	/// <c>max_sats_leaving</c> the ratio is the only guard there is, so it has to stay tight — relaxing it
+	/// would be a downgrade, not a convenience.</summary>
+	public const double FloorWithoutAbsoluteCap = 99.0;
+
+	/// <summary>Absolute cap on our own value leaving in one transaction: our fee share plus any leak.
+	/// 100k sats is generous next to a real round (a couple of our inputs and outputs at 100 sat/vByte is
+	/// tens of thousands) while still bounding what a compromised host can take from a large wallet, where
+	/// a percentage would allow far more.</summary>
+	public const long DefaultMaxSatsLeaving = 100_000;
+
+	/// <summary>How many transactions the device will sign per period. A total budget says nothing about
+	/// how fast it is spent, and every round costs the wallet its fee share even when the coinjoin is
+	/// honest, so a coordinator proposing rounds back to back can farm fees until the budget is gone.</summary>
+	public const int DefaultMaxTransactionsPerPeriod = 6;
+
+	/// <summary>Length of that period, in minutes.</summary>
+	public const int DefaultPeriodMinutes = 60;
+
+	/// <summary>What the device will enforce while it signs unattended. Grouped because the parts are only
+	/// meaningful together: the ratio guards small amounts, the absolute cap guards large ones, the total
+	/// bounds the session and the rate bounds the burst.</summary>
+	/// <param name="MaxTransactions">Null for firmware predating <c>max_txn</c>; the whole policy would be
+	/// rejected over the unknown field, and the client-side round budget still applies.</param>
+	/// <param name="MaxSatsLeaving">Null for firmware predating <c>max_sats_leaving</c>. When it is null the
+	/// ratio is the only value guard, so <see cref="FloorWithoutAbsoluteCap"/> should be used.</param>
+	/// <param name="MaxTransactionsPerPeriod">Null for firmware predating <c>max_txn_per_period</c>.</param>
+	public record ColdcardLimits(
+		double MinSelfTransferPercent = DefaultMinSelfTransferPercent,
+		long? MaxSatsLeaving = DefaultMaxSatsLeaving,
+		int? MaxTransactions = null,
+		int? MaxTransactionsPerPeriod = DefaultMaxTransactionsPerPeriod,
+		int PeriodMinutes = DefaultPeriodMinutes);
+
+	public static string Compose(IEnumerable<KeyPath> accountPaths, ColdcardLimits limits)
 	{
 		// Whitelist both the receive (…/0/*) and change (…/1/*) branches of each account for signing and proofs.
 		var paths = accountPaths
 			.SelectMany(account => new[] { $"m/{account}/0/*", $"m/{account}/1/*" })
 			.ToArray();
 
-		// The two limits are meant to be read together: the floor caps what any one transaction can move,
-		// max_txn caps how many there can be, so the total a compromised host could move is bounded. Without
-		// the count the floor is a per-transaction limit only, and the round budget that would bound the
-		// total sits in the host that is being assumed compromised.
-		var rule = maxTransactions is { } max
-			? (object)new { min_pct_self_transfer = minSelfTransferPercent, max_txn = max }
-			: new { min_pct_self_transfer = minSelfTransferPercent };
-
-		var policy = new
+		// Built as a dictionary because every limit past the ratio is optional: firmware that predates a
+		// field rejects the entire policy over the unknown key, so an absent limit must be absent, not zero.
+		var rule = new Dictionary<string, object> { ["min_pct_self_transfer"] = limits.MinSelfTransferPercent };
+		if (limits.MaxSatsLeaving is { } sats)
 		{
-			// Coinjoin PSBTs trip benign warnings (unusual shapes); the self-transfer rule is the real guard.
-			warnings_ok = true,
-			slip19_paths = paths,
-			rules = new[] { rule }
+			rule["max_sats_leaving"] = sats;
+		}
+		if (limits.MaxTransactions is { } max)
+		{
+			rule["max_txn"] = max;
+		}
+		if (limits.MaxTransactionsPerPeriod is { } rate)
+		{
+			rule["max_txn_per_period"] = rate;
+		}
+
+		var policy = new Dictionary<string, object>
+		{
+			// Coinjoin PSBTs trip benign warnings (unusual shapes); the rules above are the real guard.
+			["warnings_ok"] = true,
+			["slip19_paths"] = paths,
+			["rules"] = new[] { rule },
 		};
+
+		// The device requires a period whenever anything is measured per period.
+		if (limits.MaxTransactionsPerPeriod is not null)
+		{
+			policy["period"] = limits.PeriodMinutes;
+		}
 
 		return JsonSerializer.Serialize(policy, new JsonSerializerOptions { NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict });
 	}

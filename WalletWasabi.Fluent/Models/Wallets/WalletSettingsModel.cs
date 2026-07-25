@@ -27,6 +27,8 @@ public partial class WalletSettingsModel : ReactiveObject
 	[AutoNotify] private int _trezorCoinjoinMaxRounds;
 	[AutoNotify] private decimal _trezorCoinjoinMaxMiningFeeRate;
 	[AutoNotify] private double _coldcardMinSelfTransferPercent;
+	[AutoNotify] private long _coldcardMaxSatsLeaving;
+	[AutoNotify] private int _coldcardMaxTransactionsPerPeriod;
 	[AutoNotify] private bool _nonPrivateCoinIsolation;
 	[AutoNotify] private WalletId? _outputWalletId;
 	[AutoNotify] private ScriptType _defaultReceiveScriptType;
@@ -49,6 +51,8 @@ public partial class WalletSettingsModel : ReactiveObject
 		_trezorCoinjoinMaxRounds = _keyManager.TrezorCoinjoinMaxRounds;
 		_trezorCoinjoinMaxMiningFeeRate = _keyManager.TrezorCoinjoinMaxMiningFeeRate;
 		_coldcardMinSelfTransferPercent = _keyManager.ColdcardMinSelfTransferPercent;
+		_coldcardMaxSatsLeaving = _keyManager.ColdcardMaxSatsLeaving;
+		_coldcardMaxTransactionsPerPeriod = _keyManager.ColdcardMaxTransactionsPerPeriod;
 		_nonPrivateCoinIsolation = _keyManager.NonPrivateCoinIsolation;
 
 		if (!isNewWallet)
@@ -75,7 +79,9 @@ public partial class WalletSettingsModel : ReactiveObject
 		this.WhenAnyValue(
 				x => x.TrezorCoinjoinMaxRounds,
 				x => x.TrezorCoinjoinMaxMiningFeeRate,
-				x => x.ColdcardMinSelfTransferPercent)
+				x => x.ColdcardMinSelfTransferPercent,
+				x => x.ColdcardMaxSatsLeaving,
+				x => x.ColdcardMaxTransactionsPerPeriod)
 			.Skip(1)
 			.Do(_ => SetValues())
 			.Subscribe();
@@ -109,7 +115,7 @@ public partial class WalletSettingsModel : ReactiveObject
 	public string CoinJoinLimitsEnforcedBy => _keyManager.GetCoinJoinVendor() switch
 	{
 		HardwareCoinJoinVendor.Trezor => "Shown on the device and confirmed there; the device enforces both.",
-		HardwareCoinJoinVendor.Coldcard => "Enforced by Wasabi. The Coldcard's HSM policy has no round or fee-rate concept — on the device the guard is the self-transfer floor, which caps how much value can leave in any single transaction.",
+		HardwareCoinJoinVendor.Coldcard => "The fee-rate cap is enforced by Wasabi — the Coldcard's HSM policy has no concept of one. The limits below it are enforced by the device: how much of your value may leave in a single transaction, both as a share and as an amount, and how many transactions it will sign in total and per period.",
 		_ => "Enforced by Wasabi for this device.",
 	};
 
@@ -147,6 +153,8 @@ public partial class WalletSettingsModel : ReactiveObject
 		_keyManager.TrezorCoinjoinMaxRounds = TrezorCoinjoinMaxRounds;
 		_keyManager.TrezorCoinjoinMaxMiningFeeRate = TrezorCoinjoinMaxMiningFeeRate;
 		_keyManager.ColdcardMinSelfTransferPercent = ColdcardMinSelfTransferPercent;
+		_keyManager.ColdcardMaxSatsLeaving = ColdcardMaxSatsLeaving;
+		_keyManager.ColdcardMaxTransactionsPerPeriod = ColdcardMaxTransactionsPerPeriod;
 		_keyManager.NonPrivateCoinIsolation = NonPrivateCoinIsolation;
 		_keyManager.DefaultSendWorkflow = DefaultSendWorkflow;
 		_keyManager.DefaultReceiveScriptType = ScriptType.ToScriptPubKeyType(DefaultReceiveScriptType);

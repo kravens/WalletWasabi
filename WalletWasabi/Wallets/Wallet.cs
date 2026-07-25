@@ -184,15 +184,22 @@ public class Wallet : BackgroundService
 			existing.Dispose();
 		}
 
-		// The device-side guards are the self-transfer floor (what one transaction may move) and max_txn
-		// (how many it may sign), which together bound the total. The sat/vByte cap has no HSM equivalent
-		// and stays client-side, where CoinJoinTrackerFactory clamps the round selection.
+		// Four device-side guards, meaningful together: the self-transfer ratio (guards small amounts), an
+		// absolute cap on value leaving (guards large ones), a transaction count (bounds the session) and a
+		// per-period count (bounds a burst of rounds farmed for their fees). The sat/vByte cap has no HSM
+		// equivalent and stays client-side, where CoinJoinTrackerFactory clamps the round selection.
 		var accountPaths = new List<KeyPath> { KeyManager.SegwitAccountKeyPath };
 		if (KeyManager.TaprootExtPubKey is not null)
 		{
 			accountPaths.Add(KeyManager.TaprootAccountKeyPath);
 		}
-		var policyJson = ColdcardHsmPolicy.Compose(accountPaths, maxRounds, KeyManager.ColdcardMinSelfTransferPercent);
+		var limits = new ColdcardHsmPolicy.ColdcardLimits(
+			MinSelfTransferPercent: KeyManager.ColdcardMinSelfTransferPercent,
+			MaxSatsLeaving: KeyManager.ColdcardMaxSatsLeaving,
+			MaxTransactions: maxRounds,
+			MaxTransactionsPerPeriod: KeyManager.ColdcardMaxTransactionsPerPeriod,
+			PeriodMinutes: KeyManager.ColdcardPeriodMinutes);
+		var policyJson = ColdcardHsmPolicy.Compose(accountPaths, limits);
 
 		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
 		try
@@ -211,18 +218,28 @@ public class Wallet : BackgroundService
 			{
 				await Task.Run(() => device.StartHsm(policyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
 			}
-			catch (ColdcardException e) when (e.Message.Contains("max_txn", StringComparison.Ordinal))
+			catch (ColdcardException e) when (e.Message.Contains("Unknown item", StringComparison.Ordinal))
 			{
-				// Firmware older than the max_txn rule rejects the whole policy over the unknown field
-				// ("Unknown item: max_txn"), so retry without it rather than leaving the user unable to
-				// coinjoin. The round budget then rests on the client-side counter alone, which is weaker:
-				// it cannot bind a host that has been taken over.
+				// Firmware predating any of the newer rules rejects the whole policy over the unknown field,
+				// so fall back to what every Mk4 understands rather than leaving the user unable to coinjoin.
+				//
+				// The floor goes back up on the way down. Relaxing it is only safe because max_sats_leaving
+				// bounds the absolute loss beside it; with no absolute cap the ratio is the only value guard
+				// there is, so carrying the relaxed number over would be a silent downgrade.
 				Logger.LogWarning(
-					"This Coldcard's firmware predates the device-side transaction limit, so the round budget "
-					+ "is enforced by Wasabi alone. Update the firmware to have the device enforce it too.");
+					$"This Coldcard's firmware does not understand part of the coinjoin policy ({e.Message}). "
+					+ $"Falling back to a self-transfer floor of {ColdcardHsmPolicy.FloorWithoutAbsoluteCap}% with "
+					+ "no absolute cap, no device-side transaction count and no rate limit. The round budget then "
+					+ "rests on Wasabi alone, which cannot bind a host that has been taken over. Update the "
+					+ "firmware to have the device enforce these.");
 
-				var withoutCount = ColdcardHsmPolicy.Compose(accountPaths, minSelfTransferPercent: KeyManager.ColdcardMinSelfTransferPercent);
-				await Task.Run(() => device.StartHsm(withoutCount, cancellationToken), cancellationToken).ConfigureAwait(false);
+				var legacy = new ColdcardHsmPolicy.ColdcardLimits(
+					MinSelfTransferPercent: ColdcardHsmPolicy.FloorWithoutAbsoluteCap,
+					MaxSatsLeaving: null,
+					MaxTransactions: null,
+					MaxTransactionsPerPeriod: null);
+				var legacyJson = ColdcardHsmPolicy.Compose(accountPaths, legacy);
+				await Task.Run(() => device.StartHsm(legacyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
 			}
 
 			KeyChain = new ColdcardKeyChain(device, KeyManager, TransactionStore, maxRounds);
