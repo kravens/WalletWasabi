@@ -184,15 +184,15 @@ public class Wallet : BackgroundService
 			existing.Dispose();
 		}
 
-		// The Coldcard HSM policy has no per-round or sat/vByte concept: the device-side guard is the
-		// self-transfer floor, while the user's round budget (ColdcardKeyChain) and mining fee rate cap
-		// (CoinJoinTrackerFactory clamps the round selection) are enforced client-side.
+		// The device-side guards are the self-transfer floor (what one transaction may move) and max_txn
+		// (how many it may sign), which together bound the total. The sat/vByte cap has no HSM equivalent
+		// and stays client-side, where CoinJoinTrackerFactory clamps the round selection.
 		var accountPaths = new List<KeyPath> { KeyManager.SegwitAccountKeyPath };
 		if (KeyManager.TaprootExtPubKey is not null)
 		{
 			accountPaths.Add(KeyManager.TaprootAccountKeyPath);
 		}
-		var policyJson = ColdcardHsmPolicy.Compose(accountPaths);
+		var policyJson = ColdcardHsmPolicy.Compose(accountPaths, maxRounds);
 
 		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
 		try
@@ -206,7 +206,25 @@ public class Wallet : BackgroundService
 
 			// Fail early with a clear message if this device's firmware can't run the policy (Mk3/older, Q).
 			ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(device.GetVersion());
-			await Task.Run(() => device.StartHsm(policyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
+
+			try
+			{
+				await Task.Run(() => device.StartHsm(policyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
+			}
+			catch (ColdcardException e) when (e.Message.Contains("max_txn", StringComparison.Ordinal))
+			{
+				// Firmware older than the max_txn rule rejects the whole policy over the unknown field
+				// ("Unknown item: max_txn"), so retry without it rather than leaving the user unable to
+				// coinjoin. The round budget then rests on the client-side counter alone, which is weaker:
+				// it cannot bind a host that has been taken over.
+				Logger.LogWarning(
+					"This Coldcard's firmware predates the device-side transaction limit, so the round budget "
+					+ "is enforced by Wasabi alone. Update the firmware to have the device enforce it too.");
+
+				var withoutCount = ColdcardHsmPolicy.Compose(accountPaths);
+				await Task.Run(() => device.StartHsm(withoutCount, cancellationToken), cancellationToken).ConfigureAwait(false);
+			}
+
 			KeyChain = new ColdcardKeyChain(device, KeyManager, TransactionStore, maxRounds);
 		}
 		catch

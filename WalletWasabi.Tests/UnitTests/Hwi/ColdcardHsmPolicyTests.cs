@@ -38,6 +38,28 @@ public class ColdcardHsmPolicyTests
 		Assert.Contains("m/86'/0'/0'/1/*", paths);
 	}
 
+	[Fact]
+	public void TheRoundBudgetIsPutOnTheDeviceWhenAskedFor()
+	{
+		// The floor alone caps a single transaction. max_txn is what bounds the total, and it has to be in
+		// the policy the device approves, not only in the client-side counter a compromised host controls.
+		var json = ColdcardHsmPolicy.Compose(new[] { new KeyPath("84'/0'/0'") }, maxTransactions: 50);
+
+		using var doc = JsonDocument.Parse(json);
+		Assert.Equal(50, doc.RootElement.GetProperty("rules")[0].GetProperty("max_txn").GetInt32());
+	}
+
+	[Fact]
+	public void TheCountIsOmittedWhenNotAskedFor()
+	{
+		// Firmware predating the rule rejects the whole policy over an unknown field, so the field must be
+		// absent rather than present-and-zero for the fallback path to work.
+		var json = ColdcardHsmPolicy.Compose(new[] { new KeyPath("84'/0'/0'") });
+
+		using var doc = JsonDocument.Parse(json);
+		Assert.False(doc.RootElement.GetProperty("rules")[0].TryGetProperty("max_txn", out _));
+	}
+
 	[Theory]
 	[InlineData("4.1.9\nmk3\n")]                 // last Mk3 firmware: no min_pct_self_transfer, no newer build
 	[InlineData("Coldcard MK2 bootloader\n")]
