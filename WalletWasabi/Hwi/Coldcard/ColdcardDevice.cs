@@ -19,6 +19,14 @@ public sealed class ColdcardDevice : IDisposable
 	private ColdcardTransport _transport;
 	private readonly string? _serialNumber;
 
+	/// <summary>Serialises every exchange with the device. There is one USB pipe and the protocol has no
+	/// request/response correlation, so two overlapping commands interleave their frames and leave the
+	/// AES-CTR counters out of step for the rest of the session. Wasabi registers inputs with
+	/// Task.WhenAll, so any round contributing more than one input hits this immediately: observed as a
+	/// round that registered two inputs and then died with an unreadable reply. Reentrant, so a command
+	/// may call another (StartHsm polls GetHsmStatus).</summary>
+	private readonly object _gate = new();
+
 	/// <summary>Identifies the HSM policy this session installed, so a re-authorization can tell it apart
 	/// from a policy that was already running when we connected.</summary>
 	private string? _installedPolicyHash;
@@ -89,18 +97,24 @@ public sealed class ColdcardDevice : IDisposable
 	/// <summary>Multi-line version string (firmware version, git hash, model, etc.).</summary>
 	public string GetVersion()
 	{
-		EnsureHealthySession();
-		var (_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("vers"));
-		return Encoding.ASCII.GetString(payload);
+		lock (_gate)
+		{
+			EnsureHealthySession();
+			var (_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("vers"));
+			return Encoding.ASCII.GetString(payload);
+		}
 	}
 
 	/// <summary>Extended public key at the given derivation path.</summary>
 	public BitcoinExtPubKey GetXpub(KeyPath keyPath, Network network)
 	{
-		EnsureHealthySession();
-		var request = Encoding.ASCII.GetBytes("xpub" + $"m/{keyPath}");
-		var (_, payload) = _transport.SendReceive(request);
-		return new BitcoinExtPubKey(Encoding.ASCII.GetString(payload).TrimEnd('\0'), network);
+		lock (_gate)
+		{
+			EnsureHealthySession();
+			var request = Encoding.ASCII.GetBytes("xpub" + $"m/{keyPath}");
+			var (_, payload) = _transport.SendReceive(request);
+			return new BitcoinExtPubKey(Encoding.ASCII.GetString(payload).TrimEnd('\0'), network);
+		}
 	}
 
 	/// <summary>
@@ -109,32 +123,35 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public byte[] SignOwnershipProof(KeyPath keyPath, ScriptPubKeyType scriptType, byte[] commitmentData, bool userConfirmation = true)
 	{
-		EnsureHealthySession();
-		var subpath = Encoding.ASCII.GetBytes($"m/{keyPath}");
-		byte flags = (byte)(userConfirmation ? 0x01 : 0x00);
-
-		// 'slp9' layout '<4sIIII>': tag ‖ addr_fmt ‖ flags ‖ subpath length ‖ commitment length. The
-		// address format is stated rather than left for the device to infer from the path, so the proof
-		// is over the script the coordinator actually holds for this input.
-		var header = new byte[20];
-		Encoding.ASCII.GetBytes("slp9").CopyTo(header, 0);
-		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), AddressFormatOf(scriptType));
-		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), flags);
-		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(12), (uint)subpath.Length);
-		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(16), (uint)commitmentData.Length);
-
-		var request = header.Concat(subpath).Concat(commitmentData).ToArray();
-		var (tag, payload) = _transport.SendReceive(request);
-
-		// The firmware answers a proof with 'biny'. Anything else parsed as a proof would surface much
-		// later as an opaque "Invalid version magic" from the deserializer, so name the real problem here.
-		if (tag != "biny")
+		lock (_gate)
 		{
-			_transport.MarkUnhealthy();
-			throw new ColdcardException($"expected an ownership proof but the device replied '{tag}'.");
-		}
+			EnsureHealthySession();
+			var subpath = Encoding.ASCII.GetBytes($"m/{keyPath}");
+			byte flags = (byte)(userConfirmation ? 0x01 : 0x00);
 
-		return payload;
+			// 'slp9' layout '<4sIIII>': tag ‖ addr_fmt ‖ flags ‖ subpath length ‖ commitment length. The
+			// address format is stated rather than left for the device to infer from the path, so the proof
+			// is over the script the coordinator actually holds for this input.
+			var header = new byte[20];
+			Encoding.ASCII.GetBytes("slp9").CopyTo(header, 0);
+			BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), AddressFormatOf(scriptType));
+			BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), flags);
+			BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(12), (uint)subpath.Length);
+			BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(16), (uint)commitmentData.Length);
+
+			var request = header.Concat(subpath).Concat(commitmentData).ToArray();
+			var (tag, payload) = _transport.SendReceive(request);
+
+			// The firmware answers a proof with 'biny'. Anything else parsed as a proof would surface much
+			// later as an opaque "Invalid version magic" from the deserializer, so name the real problem here.
+			if (tag != "biny")
+			{
+				_transport.MarkUnhealthy();
+				throw new ColdcardException($"expected an ownership proof but the device replied '{tag}'.");
+			}
+
+			return payload;
+		}
 	}
 
 	/// <summary>The firmware's AF_* address format constant (see its <c>public_constants.py</c>).</summary>
@@ -151,66 +168,69 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public void StartHsm(string policyJson, CancellationToken cancellationToken)
 	{
-		EnsureHealthySession();
-		var current = GetHsmStatus();
-		if (current.Active)
+		lock (_gate)
 		{
-			// HSM mode is a one-way trip until reboot, so a policy is already running. If it is the one
-			// we installed, this is just a re-authorization and there is nothing to do.
-			if (_installedPolicyHash is { } ours && ours == current.PolicyHash)
+			EnsureHealthySession();
+			var current = GetHsmStatus();
+			if (current.Active)
 			{
+				// HSM mode is a one-way trip until reboot, so a policy is already running. If it is the one
+				// we installed, this is just a re-authorization and there is nothing to do.
+				if (_installedPolicyHash is { } ours && ours == current.PolicyHash)
+				{
+					return;
+				}
+
+				// Otherwise the device is enforcing a policy nobody here installed - typically one the user
+				// approved on the device itself, since installing one needs physical approval. Not an attack
+				// then, but the limits it enforces are not the ones being shown, so do not pass silently.
+				// Refusing would break the legitimate "set the policy on the device first" workflow, so this
+				// warns and continues; the device policy still bounds what can be signed either way.
+				Logger.LogWarning(
+					"The Coldcard is already in HSM mode under a policy this session did not install "
+					+ $"(policy hash {current.PolicyHash ?? "unknown"}). The limits it enforces may differ from "
+					+ "the ones configured here. Reboot the Coldcard and authorize again to apply these limits.");
 				return;
 			}
 
-			// Otherwise the device is enforcing a policy nobody here installed - typically one the user
-			// approved on the device itself, since installing one needs physical approval. Not an attack
-			// then, but the limits it enforces are not the ones being shown, so do not pass silently.
-			// Refusing would break the legitimate "set the policy on the device first" workflow, so this
-			// warns and continues; the device policy still bounds what can be signed either way.
-			Logger.LogWarning(
-				"The Coldcard is already in HSM mode under a policy this session did not install "
-				+ $"(policy hash {current.PolicyHash ?? "unknown"}). The limits it enforces may differ from "
-				+ "the ones configured here. Reboot the Coldcard and authorize again to apply these limits.");
-			return;
-		}
+			var data = Encoding.UTF8.GetBytes(policyJson);
+			var sha = UploadFile(data);
 
-		var data = Encoding.UTF8.GetBytes(policyJson);
-		var sha = UploadFile(data);
+			// 'hsms': length + sha of the uploaded policy. The device replies immediately and then shows the
+			// policy on its screen; the decision has to be observed by polling the HSM status.
+			var request = new byte[40];
+			Encoding.ASCII.GetBytes("hsms").CopyTo(request, 0);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)data.Length);
+			sha.CopyTo(request, 8);
+			_transport.SendReceive(request);
 
-		// 'hsms': length + sha of the uploaded policy. The device replies immediately and then shows the
-		// policy on its screen; the decision has to be observed by polling the HSM status.
-		var request = new byte[40];
-		Encoding.ASCII.GetBytes("hsms").CopyTo(request, 0);
-		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)data.Length);
-		sha.CopyTo(request, 8);
-		_transport.SendReceive(request);
-
-		// 'approval_wait' while the story is on screen, 'active' once approved, neither means refused.
-		// Generous window: the user reads the whole policy, confirms, then keys an anti-fat-finger digit,
-		// and on hardware three minutes turned out to be short for a first-time read. Giving up early is
-		// not destructive — the device keeps the prompt up, and a later approval is picked up by the
-		// already-active check above — but it does surface a spurious error, so don't rush it.
-		var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
-		while (true)
-		{
-			cancellationToken.ThrowIfCancellationRequested();
-			var status = GetHsmStatus();
-			if (status.Active)
+			// 'approval_wait' while the story is on screen, 'active' once approved, neither means refused.
+			// Generous window: the user reads the whole policy, confirms, then keys an anti-fat-finger digit,
+			// and on hardware three minutes turned out to be short for a first-time read. Giving up early is
+			// not destructive — the device keeps the prompt up, and a later approval is picked up by the
+			// already-active check above — but it does surface a spurious error, so don't rush it.
+			var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
+			while (true)
 			{
-				// Remember which policy this is, so a later re-authorization can tell our own policy
-				// apart from one that was already running when we arrived.
-				_installedPolicyHash = status.PolicyHash;
-				return;
+				cancellationToken.ThrowIfCancellationRequested();
+				var status = GetHsmStatus();
+				if (status.Active)
+				{
+					// Remember which policy this is, so a later re-authorization can tell our own policy
+					// apart from one that was already running when we arrived.
+					_installedPolicyHash = status.PolicyHash;
+					return;
+				}
+				if (!status.ApprovalWait)
+				{
+					throw new ColdcardException("The HSM policy was refused on the device.");
+				}
+				if (DateTime.UtcNow > deadline)
+				{
+					throw new ColdcardException("Timed out waiting for the HSM policy approval on the device.");
+				}
+				Thread.Sleep(500);
 			}
-			if (!status.ApprovalWait)
-			{
-				throw new ColdcardException("The HSM policy was refused on the device.");
-			}
-			if (DateTime.UtcNow > deadline)
-			{
-				throw new ColdcardException("Timed out waiting for the HSM policy approval on the device.");
-			}
-			Thread.Sleep(500);
 		}
 	}
 
@@ -218,26 +238,29 @@ public sealed class ColdcardDevice : IDisposable
 	/// currently on screen waiting for the user's approval, and the hash identifying the running policy.</summary>
 	public (bool Active, bool ApprovalWait, string? PolicyHash) GetHsmStatus()
 	{
-		EnsureHealthySession();
-		byte[] payload;
-		try
+		lock (_gate)
 		{
-			(_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("hsts"));
-		}
-		catch (ColdcardException e) when (e.Message.Contains("HSM commands disabled"))
-		{
-			// Both 'hsts' and 'hsms' sit in the firmware's HSM_DISABLE_CMDS set, and a factory-fresh
-			// device ships with the setting off, so say where to turn it on instead of echoing the device.
-			throw new ColdcardException(
-				"HSM commands are disabled on this Coldcard. Enable them on the device at "
-				+ "Settings > Advanced/Tools > Spending Policy > HSM Mode > Enable, then try again.");
-		}
+			EnsureHealthySession();
+			byte[] payload;
+			try
+			{
+				(_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("hsts"));
+			}
+			catch (ColdcardException e) when (e.Message.Contains("HSM commands disabled"))
+			{
+				// Both 'hsts' and 'hsms' sit in the firmware's HSM_DISABLE_CMDS set, and a factory-fresh
+				// device ships with the setting off, so say where to turn it on instead of echoing the device.
+				throw new ColdcardException(
+					"HSM commands are disabled on this Coldcard. Enable them on the device at "
+					+ "Settings > Advanced/Tools > Spending Policy > HSM Mode > Enable, then try again.");
+			}
 
-		using var status = JsonDocument.Parse(payload);
-		return (
-			status.RootElement.TryGetProperty("active", out var active) && active.GetBoolean(),
-			status.RootElement.TryGetProperty("approval_wait", out var wait) && wait.GetBoolean(),
-			status.RootElement.TryGetProperty("policy_hash", out var hash) ? hash.GetString() : null);
+			using var status = JsonDocument.Parse(payload);
+			return (
+				status.RootElement.TryGetProperty("active", out var active) && active.GetBoolean(),
+				status.RootElement.TryGetProperty("approval_wait", out var wait) && wait.GetBoolean(),
+				status.RootElement.TryGetProperty("policy_hash", out var hash) ? hash.GetString() : null);
+		}
 	}
 
 	/// <summary>
@@ -246,19 +269,22 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public byte[] SignPsbt(byte[] psbt, CancellationToken cancellationToken)
 	{
-		EnsureHealthySession();
-		var sha = UploadFile(psbt);
+		lock (_gate)
+		{
+			EnsureHealthySession();
+			var sha = UploadFile(psbt);
 
-		// 'stxn' layout '<4sII32s>': tag ‖ length ‖ flags (0 = do not finalize, return signed PSBT) ‖ sha.
-		var request = new byte[44];
-		Encoding.ASCII.GetBytes("stxn").CopyTo(request, 0);
-		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)psbt.Length);
-		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(8), 0);
-		sha.CopyTo(request, 12);
-		_transport.SendReceive(request);
+			// 'stxn' layout '<4sII32s>': tag ‖ length ‖ flags (0 = do not finalize, return signed PSBT) ‖ sha.
+			var request = new byte[44];
+			Encoding.ASCII.GetBytes("stxn").CopyTo(request, 0);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(4), (uint)psbt.Length);
+			BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(8), 0);
+			sha.CopyTo(request, 12);
+			_transport.SendReceive(request);
 
-		var (length, resultSha) = PollForSignedFile(cancellationToken);
-		return DownloadFile(length, resultSha, fileNumber: 1);
+			var (length, resultSha) = PollForSignedFile(cancellationToken);
+			return DownloadFile(length, resultSha, fileNumber: 1);
+		}
 	}
 
 	/// <summary>Uploads a file in blocks and verifies the device's checksum; returns its SHA-256.</summary>
