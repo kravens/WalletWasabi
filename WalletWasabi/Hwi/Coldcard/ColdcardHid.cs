@@ -36,7 +36,12 @@ public static class ColdcardUsb
 			return ColdcardHidWindows.Open(serialNumber);
 		}
 
-		throw new PlatformNotSupportedException("Coldcard HID transport is currently implemented for Windows only.");
+		if (OperatingSystem.IsLinux())
+		{
+			return ColdcardHidLinux.Open(serialNumber);
+		}
+
+		throw new PlatformNotSupportedException("The Coldcard HID transport is implemented for Windows and Linux; macOS (IOKit) is not written yet.");
 	}
 
 	/// <summary>Serial numbers of the connected Coldcards (empty when none are attached).</summary>
@@ -45,6 +50,11 @@ public static class ColdcardUsb
 		if (OperatingSystem.IsWindows())
 		{
 			return ColdcardHidWindows.Enumerate();
+		}
+
+		if (OperatingSystem.IsLinux())
+		{
+			return ColdcardHidLinux.Enumerate();
 		}
 
 		return [];
