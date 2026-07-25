@@ -65,6 +65,46 @@ public static class HardwareWalletOperationHelpers
 	}
 
 	/// <summary>
+	/// Imports whichever coinjoin-capable hardware wallet is connected, without a GUI. Trezor keeps its
+	/// bridge-only path (the SLIP-25 account is not reachable over HWI); every other vendor is enumerated
+	/// with HWI and imported the same way the GUI does it. Fails when the connected devices are ambiguous,
+	/// rather than picking one for the user.
+	/// </summary>
+	public static async Task<KeyManager> ImportHardwareWalletAsync(string walletFilePath, Network network, bool enableCoinjoin, CancellationToken cancelToken)
+	{
+		// HWI needs the USB device to itself, so release a coinjoin bridge we may have started.
+		TrezorBridgeManager.StopIfOurs();
+
+		var client = new HwiClient(network);
+		var entries = (await client.EnumerateAsync(cancelToken).ConfigureAwait(false)).ToArray();
+		var usable = entries.Where(e => e.Model.SupportsCoinJoin() && e.Fingerprint is not null).ToArray();
+
+		if (usable.Length == 0)
+		{
+			var seen = entries.Length == 0 ? "none" : string.Join(", ", entries.Select(e => e.Model.ToString()));
+			throw new InvalidOperationException(
+				$"No coinjoin-capable hardware wallet found. Connect and unlock the device. Devices seen: {seen}.");
+		}
+		if (usable.Length > 1)
+		{
+			throw new InvalidOperationException(
+				"More than one coinjoin-capable hardware wallet is connected: "
+				+ string.Join(", ", usable.Select(e => $"{e.Model} ({e.Fingerprint})"))
+				+ ". Leave only the one to import connected.");
+		}
+
+		var device = usable[0];
+		if (device.Model.VendorOf() is HardwareCoinJoinVendor.Trezor)
+		{
+			return await ImportTrezorWalletAsync(walletFilePath, network, enableCoinjoin, cancelToken).ConfigureAwait(false);
+		}
+
+		var keyManager = await GenerateWalletAsync(device, walletFilePath, network, cancelToken, enableCoinjoin).ConfigureAwait(false);
+		keyManager.SetIcon(device.Model.ToString());
+		return keyManager;
+	}
+
+	/// <summary>
 	/// Imports the connected Trezor as a watch-only wallet using only the Trezor Bridge, so it works on a
 	/// headless daemon without HWI. With <paramref name="enableCoinjoin"/> the SLIP-25 coinjoin account is
 	/// read too, which the device asks to confirm with the coinjoin path unlock.

@@ -13,6 +13,7 @@ using WalletWasabi.Blockchain.TransactionOutputs;
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Models;
 using WalletWasabi.Rpc;
@@ -108,22 +109,26 @@ public class WasabiJsonRpcService : IJsonRpcService
 		Global.WalletManager.AddWallet(keyManager);
 	}
 
+	/// <summary>Imports whichever coinjoin-capable hardware wallet is connected. 'importtrezorwallet' is
+	/// kept as an alias so existing scripts keep working, but it is no longer Trezor-only.</summary>
+	[JsonRpcMethod("importhardwarewallet", initializable: false)]
 	[JsonRpcMethod("importtrezorwallet", initializable: false)]
-	public async Task<object> ImportTrezorWalletAsync(string walletName, bool enableCoinjoin = true)
+	public async Task<object> ImportHardwareWalletAsync(string walletName, bool enableCoinjoin = true)
 	{
 		AssertNoTrezorCoinJoinInProgress();
 		var walletFilePath = WalletGenerator.GetWalletFilePath(walletName, Global.WalletManager.WalletDirectories.WalletsDir);
 
-		// Reading the SLIP-25 account asks for a confirmation on the device, give the user time for it.
+		// Reading a Trezor's SLIP-25 account asks for a confirmation on the device; give time for it.
 		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-		var keyManager = await HardwareWalletOperationHelpers.ImportTrezorWalletAsync(walletFilePath, Global.Network, enableCoinjoin, cts.Token).ConfigureAwait(false);
+		var keyManager = await HardwareWalletOperationHelpers.ImportHardwareWalletAsync(walletFilePath, Global.Network, enableCoinjoin, cts.Token).ConfigureAwait(false);
 		Global.WalletManager.AddWallet(keyManager);
 
 		return new JsonRpcResult
 		{
 			["walletName"] = walletName,
 			["masterKeyFingerprint"] = keyManager.MasterFingerprint?.ToString() ?? "",
-			["coinjoinEnabled"] = keyManager.IsTrezorCoinJoinWallet()
+			["vendor"] = keyManager.GetCoinJoinVendor().ToString(),
+			["coinjoinEnabled"] = keyManager.IsHardwareCoinJoinWallet()
 		};
 	}
 
