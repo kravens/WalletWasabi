@@ -64,14 +64,17 @@ internal sealed class ColdcardHidLinux : IColdcardHid
 
 	/// <summary>Every hidraw node whose uevent reports the Coldcard's vendor and product, with the serial
 	/// the same file carries as HID_UNIQ.</summary>
-	private static IEnumerable<(string Node, string? Serial)> EnumerateColdcards()
+	/// <param name="classRoot">Where to look. Only tests pass anything else: the parsing is the part that
+	/// can quietly be wrong (hex widths, a missing HID_UNIQ, an unrelated device sitting alongside), and it
+	/// cannot be covered otherwise without a Coldcard plugged into a Linux box.</param>
+	internal static IEnumerable<(string Node, string? Serial)> EnumerateColdcards(string classRoot = HidrawClass)
 	{
-		if (!Directory.Exists(HidrawClass))
+		if (!Directory.Exists(classRoot))
 		{
 			yield break;
 		}
 
-		foreach (var entry in Directory.GetDirectories(HidrawClass).Order())
+		foreach (var entry in Directory.GetDirectories(classRoot).Order())
 		{
 			var name = Path.GetFileName(entry);
 			string? serial = null;
