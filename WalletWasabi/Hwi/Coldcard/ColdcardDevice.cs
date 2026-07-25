@@ -16,15 +16,52 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </summary>
 public sealed class ColdcardDevice : IDisposable
 {
-	private readonly ColdcardTransport _transport;
+	private ColdcardTransport _transport;
+	private readonly string? _serialNumber;
 
 	/// <summary>Identifies the HSM policy this session installed, so a re-authorization can tell it apart
 	/// from a policy that was already running when we connected.</summary>
 	private string? _installedPolicyHash;
 
-	private ColdcardDevice(ColdcardTransport transport)
+	private ColdcardDevice(ColdcardTransport transport, string? serialNumber)
 	{
 		_transport = transport;
+		_serialNumber = serialNumber;
+	}
+
+	/// <summary>
+	/// Replaces the session if the encrypted link has lost sync. Nothing is recoverable once the AES-CTR
+	/// counters are apart, but the device itself is fine — a fresh handshake works immediately — so
+	/// reconnect rather than leaving every later command to fail with nonsense. HSM mode lives on the
+	/// device, so an active policy survives this.
+	/// </summary>
+	private void EnsureHealthySession()
+	{
+		if (_transport.IsHealthy)
+		{
+			return;
+		}
+
+		Logger.LogWarning("The Coldcard link lost sync; reconnecting to the device.");
+		_transport.Dispose();
+
+		var transport = new ColdcardTransport(ColdcardUsb.Open(_serialNumber));
+		try
+		{
+			var (fingerprint, masterXpub) = transport.StartEncryption();
+			if (fingerprint != MasterFingerprint)
+			{
+				throw new ColdcardException("a different Coldcard is now connected. Reconnect the wallet's own device.");
+			}
+
+			_transport = transport;
+			MasterXpub = masterXpub;
+		}
+		catch
+		{
+			transport.Dispose();
+			throw;
+		}
 	}
 
 	public uint MasterFingerprint { get; private set; }
@@ -36,7 +73,7 @@ public sealed class ColdcardDevice : IDisposable
 		var transport = new ColdcardTransport(ColdcardUsb.Open(serialNumber));
 		try
 		{
-			var device = new ColdcardDevice(transport);
+			var device = new ColdcardDevice(transport, serialNumber);
 			var (fingerprint, masterXpub) = transport.StartEncryption();
 			device.MasterFingerprint = fingerprint;
 			device.MasterXpub = masterXpub;
@@ -52,6 +89,7 @@ public sealed class ColdcardDevice : IDisposable
 	/// <summary>Multi-line version string (firmware version, git hash, model, etc.).</summary>
 	public string GetVersion()
 	{
+		EnsureHealthySession();
 		var (_, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("vers"));
 		return Encoding.ASCII.GetString(payload);
 	}
@@ -59,6 +97,7 @@ public sealed class ColdcardDevice : IDisposable
 	/// <summary>Extended public key at the given derivation path.</summary>
 	public BitcoinExtPubKey GetXpub(KeyPath keyPath, Network network)
 	{
+		EnsureHealthySession();
 		var request = Encoding.ASCII.GetBytes("xpub" + $"m/{keyPath}");
 		var (_, payload) = _transport.SendReceive(request);
 		return new BitcoinExtPubKey(Encoding.ASCII.GetString(payload).TrimEnd('\0'), network);
@@ -70,6 +109,7 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public byte[] SignOwnershipProof(KeyPath keyPath, ScriptPubKeyType scriptType, byte[] commitmentData, bool userConfirmation = true)
 	{
+		EnsureHealthySession();
 		var subpath = Encoding.ASCII.GetBytes($"m/{keyPath}");
 		byte flags = (byte)(userConfirmation ? 0x01 : 0x00);
 
@@ -84,7 +124,16 @@ public sealed class ColdcardDevice : IDisposable
 		BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(16), (uint)commitmentData.Length);
 
 		var request = header.Concat(subpath).Concat(commitmentData).ToArray();
-		var (_, payload) = _transport.SendReceive(request);
+		var (tag, payload) = _transport.SendReceive(request);
+
+		// The firmware answers a proof with 'biny'. Anything else parsed as a proof would surface much
+		// later as an opaque "Invalid version magic" from the deserializer, so name the real problem here.
+		if (tag != "biny")
+		{
+			_transport.MarkUnhealthy();
+			throw new ColdcardException($"expected an ownership proof but the device replied '{tag}'.");
+		}
+
 		return payload;
 	}
 
@@ -102,6 +151,7 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public void StartHsm(string policyJson, CancellationToken cancellationToken)
 	{
+		EnsureHealthySession();
 		var current = GetHsmStatus();
 		if (current.Active)
 		{
@@ -168,6 +218,7 @@ public sealed class ColdcardDevice : IDisposable
 	/// currently on screen waiting for the user's approval, and the hash identifying the running policy.</summary>
 	public (bool Active, bool ApprovalWait, string? PolicyHash) GetHsmStatus()
 	{
+		EnsureHealthySession();
 		byte[] payload;
 		try
 		{
@@ -195,6 +246,7 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public byte[] SignPsbt(byte[] psbt, CancellationToken cancellationToken)
 	{
+		EnsureHealthySession();
 		var sha = UploadFile(psbt);
 
 		// 'stxn' layout '<4sII32s>': tag ‖ length ‖ flags (0 = do not finalize, return signed PSBT) ‖ sha.
@@ -229,7 +281,8 @@ public sealed class ColdcardDevice : IDisposable
 		var (_, deviceSha) = _transport.SendReceive(Encoding.ASCII.GetBytes("sha2"));
 		if (!deviceSha.AsSpan().SequenceEqual(expected))
 		{
-			throw new ColdcardException("Checksum mismatch during file upload.");
+			_transport.MarkUnhealthy();
+			throw new ColdcardException("checksum mismatch during file upload; the link may have lost sync.");
 		}
 		return expected;
 	}
@@ -264,7 +317,8 @@ public sealed class ColdcardDevice : IDisposable
 
 		if (!System.Security.Cryptography.SHA256.HashData(result).AsSpan().SequenceEqual(expectedSha))
 		{
-			throw new ColdcardException("Checksum mismatch during file download.");
+			_transport.MarkUnhealthy();
+			throw new ColdcardException("checksum mismatch during file download; the link may have lost sync.");
 		}
 		return result;
 	}

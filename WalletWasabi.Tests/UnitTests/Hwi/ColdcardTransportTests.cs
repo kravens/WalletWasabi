@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -76,6 +77,53 @@ public class ColdcardTransportTests
 		Assert.Equal("asci", tag);
 		Assert.Equal("hello", Encoding.ASCII.GetString(payload));
 		Assert.NotEmpty(fake.Written);
+	}
+
+	// --- losing sync ---------------------------------------------------------------------------
+	//
+	// Each direction has its own AES-CTR counter and nothing ties a reply to its request, so one dropped
+	// or late response leaves the two sides a message apart permanently. Seen on hardware: an upload
+	// checksum "mismatch", then every ownership proof failing to parse until Wasabi was restarted. The
+	// session cannot resynchronise, so it has to notice and be replaced rather than keep returning noise.
+
+	private static IEnumerable<byte[]> Framed(string body) =>
+		CkccFraming.PackRequest(Encoding.ASCII.GetBytes(body), encrypted: false).Select(r => r[1..]).ToList();
+
+	[Fact]
+	public void AnUnreadableReplyIsTreatedAsLostSync()
+	{
+		// What a desynchronised stream really yields: plausible bytes, meaningless tag.
+		using var fake = new FakeHid(Framed("§¶xQnonsense"));
+		using var transport = new ColdcardTransport(fake);
+
+		var ex = Assert.Throws<ColdcardException>(() => transport.SendReceive(Encoding.ASCII.GetBytes("vers")));
+
+		Assert.Contains("lost sync", ex.Message);
+		Assert.False(transport.IsHealthy);
+	}
+
+	[Fact]
+	public void ATimedOutExchangeMarksTheSessionUnusable()
+	{
+		// The abandoned reply can still turn up and be read as the answer to the next request.
+		using var fake = new FakeHid([]);
+		using var transport = new ColdcardTransport(fake);
+
+		Assert.Throws<IOException>(() => transport.SendReceive(Encoding.ASCII.GetBytes("vers")));
+		Assert.False(transport.IsHealthy);
+	}
+
+	[Fact]
+	public void ADeviceErrorIsReportedWithoutCondemningTheSession()
+	{
+		// 'err_' is the device answering correctly. The link is fine and must not be torn down.
+		using var fake = new FakeHid(Framed("err_nope"));
+		using var transport = new ColdcardTransport(fake);
+
+		var ex = Assert.Throws<ColdcardException>(() => transport.SendReceive(Encoding.ASCII.GetBytes("vers")));
+
+		Assert.Contains("nope", ex.Message);
+		Assert.True(transport.IsHealthy);
 	}
 
 	private sealed class FakeHid : IColdcardHid
