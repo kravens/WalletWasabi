@@ -16,6 +16,11 @@ public static class CkccFraming
 	private const byte EncryptFlag = 0x40;
 	private const byte LengthMask = 0x3f;
 
+	/// <summary>The protocol's own ceiling on a message (<c>MAX_MSG_LEN</c> = 4+4+4+<c>MAX_BLK_LEN</c>),
+	/// with a report of slack. Nothing the device legitimately sends comes close, so exceeding it means
+	/// the last-report flag is never coming and we should stop rather than buffer without limit.</summary>
+	private const int MaxMessageLength = 2060 + PayloadPerReport;
+
 	/// <summary>Splits a message into 65-byte output reports (report-id 0, header, up to 63 payload bytes).</summary>
 	public static IEnumerable<byte[]> PackRequest(byte[] message, bool encrypted)
 	{
@@ -40,8 +45,22 @@ public static class CkccFraming
 		while (true)
 		{
 			var report = readReport() ?? throw new IOException("Coldcard did not respond in time.");
+
+			// A report always carries a header byte plus room for the 63 payload bytes the length field
+			// can describe. A short read would otherwise index past the end of the buffer.
+			if (report.Length < ColdcardUsb.InputReportLength)
+			{
+				throw new IOException($"Coldcard sent a truncated {report.Length}-byte HID report.");
+			}
+
 			byte header = report[0];
 			int length = header & LengthMask;
+
+			if (message.Count + length > MaxMessageLength)
+			{
+				throw new IOException("Coldcard response grew past the protocol maximum without ending.");
+			}
+
 			for (int i = 0; i < length; i++)
 			{
 				message.Add(report[1 + i]);

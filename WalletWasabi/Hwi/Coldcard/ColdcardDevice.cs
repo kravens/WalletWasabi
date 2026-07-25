@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using NBitcoin;
+using WalletWasabi.Logging;
 
 namespace WalletWasabi.Hwi.Coldcard;
 
@@ -16,6 +17,10 @@ namespace WalletWasabi.Hwi.Coldcard;
 public sealed class ColdcardDevice : IDisposable
 {
 	private readonly ColdcardTransport _transport;
+
+	/// <summary>Identifies the HSM policy this session installed, so a re-authorization can tell it apart
+	/// from a policy that was already running when we connected.</summary>
+	private string? _installedPolicyHash;
 
 	private ColdcardDevice(ColdcardTransport transport)
 	{
@@ -97,10 +102,25 @@ public sealed class ColdcardDevice : IDisposable
 	/// </summary>
 	public void StartHsm(string policyJson, CancellationToken cancellationToken)
 	{
-		if (GetHsmStatus().Active)
+		var current = GetHsmStatus();
+		if (current.Active)
 		{
-			// HSM mode is a one-way trip until reboot, so a policy from an earlier session is still
-			// running. If it is not ours, signing gets refused by that policy rather than misbehaving.
+			// HSM mode is a one-way trip until reboot, so a policy is already running. If it is the one
+			// we installed, this is just a re-authorization and there is nothing to do.
+			if (_installedPolicyHash is { } ours && ours == current.PolicyHash)
+			{
+				return;
+			}
+
+			// Otherwise the device is enforcing a policy nobody here installed - typically one the user
+			// approved on the device itself, since installing one needs physical approval. Not an attack
+			// then, but the limits it enforces are not the ones being shown, so do not pass silently.
+			// Refusing would break the legitimate "set the policy on the device first" workflow, so this
+			// warns and continues; the device policy still bounds what can be signed either way.
+			Logger.LogWarning(
+				"The Coldcard is already in HSM mode under a policy this session did not install "
+				+ $"(policy hash {current.PolicyHash ?? "unknown"}). The limits it enforces may differ from "
+				+ "the ones configured here. Reboot the Coldcard and authorize again to apply these limits.");
 			return;
 		}
 
@@ -127,6 +147,9 @@ public sealed class ColdcardDevice : IDisposable
 			var status = GetHsmStatus();
 			if (status.Active)
 			{
+				// Remember which policy this is, so a later re-authorization can tell our own policy
+				// apart from one that was already running when we arrived.
+				_installedPolicyHash = status.PolicyHash;
 				return;
 			}
 			if (!status.ApprovalWait)
@@ -141,9 +164,9 @@ public sealed class ColdcardDevice : IDisposable
 		}
 	}
 
-	/// <summary>The device's HSM state ('hsts' command): whether a policy is active, and whether one is
-	/// currently on screen waiting for the user's approval.</summary>
-	public (bool Active, bool ApprovalWait) GetHsmStatus()
+	/// <summary>The device's HSM state ('hsts' command): whether a policy is active, whether one is
+	/// currently on screen waiting for the user's approval, and the hash identifying the running policy.</summary>
+	public (bool Active, bool ApprovalWait, string? PolicyHash) GetHsmStatus()
 	{
 		byte[] payload;
 		try
@@ -162,7 +185,8 @@ public sealed class ColdcardDevice : IDisposable
 		using var status = JsonDocument.Parse(payload);
 		return (
 			status.RootElement.TryGetProperty("active", out var active) && active.GetBoolean(),
-			status.RootElement.TryGetProperty("approval_wait", out var wait) && wait.GetBoolean());
+			status.RootElement.TryGetProperty("approval_wait", out var wait) && wait.GetBoolean(),
+			status.RootElement.TryGetProperty("policy_hash", out var hash) ? hash.GetString() : null);
 	}
 
 	/// <summary>
@@ -210,9 +234,20 @@ public sealed class ColdcardDevice : IDisposable
 		return expected;
 	}
 
+	/// <summary>The firmware's <c>MAX_TXN_LEN_MK4</c>: nothing we ask the device for can exceed it, so it is
+	/// the ceiling on a length the device reports back to us.</summary>
+	private const uint MaxTransferLength = 2 * 1024 * 1024;
+
 	/// <summary>Downloads a signed file (file 1) block by block and checks its SHA-256.</summary>
 	private byte[] DownloadFile(uint length, byte[] expectedSha, int fileNumber)
 	{
+		// The link is AES-CTR with no MAC, so a corrupted length field arrives looking legitimate. Bound
+		// it before it becomes an allocation.
+		if (length > MaxTransferLength)
+		{
+			throw new ColdcardException($"The Coldcard reported an implausible {length}-byte result; refusing it.");
+		}
+
 		const int BlockSize = 1024;
 		var result = new byte[length];
 		for (uint offset = 0; offset < length; offset += BlockSize)
@@ -242,6 +277,10 @@ public sealed class ColdcardDevice : IDisposable
 			var (tag, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("stok"));
 			if (tag == "strx") // done: <I32s> length + sha
 			{
+				if (payload.Length < 36)
+				{
+					throw new ColdcardException($"The Coldcard sent a {payload.Length}-byte signing result header; expected 36.");
+				}
 				return (BinaryPrimitives.ReadUInt32LittleEndian(payload), payload[4..36]);
 			}
 			if (tag == "refu")
