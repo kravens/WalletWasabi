@@ -15,13 +15,20 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </summary>
 public static class ColdcardHsmPolicy
 {
-	/// <summary>Default minimum self-transfer percentage. A compromised host can leak at most
-	/// (100 − this)% of the wallet's inputs per signed transaction, so this is kept tight: a legitimate
-	/// round keeps ~99.5%+ of the wallet's value (coordinator fee ≤ 0.3%, mining fee share well under
-	/// that). The flip side is intentional: a round where our fees would exceed 1% (tiny coins at high
-	/// fee rates, or value lost to failed output registrations) gets refused by the device. The number of
-	/// rounds one authorization is good for is enforced client-side
-	/// (<c>ColdcardKeyChain.RoundsExhausted</c>); a device-side round counter is a firmware follow-up.</summary>
+	/// <summary>Default minimum self-transfer percentage. A legitimate round keeps ~99.5%+ of the wallet's
+	/// value (coordinator fee ≤ 0.3%, mining fee share well under that), so 99% is tight with a little
+	/// headroom. The flip side is intentional: a round where our fees would exceed 1% (tiny coins at high
+	/// fee rates, or value lost to failed output registrations) gets refused by the device.
+	/// <para>
+	/// Known limit, worth being exact about. This bounds the leak per <em>signed transaction</em> to
+	/// (100 − this)%, not in total: the device has no transaction counter, so a host that had been taken
+	/// over could keep presenting fresh 99%-self-transfer coinjoins and skim 1% each time. The round budget
+	/// that would stop that (<c>ColdcardKeyChain.RoundsExhausted</c>) lives client-side, in the very process
+	/// such an attacker controls. Closing it properly needs a device-side count-of-transactions rule in the
+	/// HSM policy — a firmware follow-up. The policy's existing velocity limits cannot substitute: both
+	/// <c>per_period</c> and <c>max_amount</c> are measured against non-change outputs, which in a coinjoin
+	/// are the other participants' outputs, so any workable limit would be tripped by honest rounds.
+	/// </para></summary>
 	public const double DefaultMinSelfTransferPercent = 99.0;
 
 	public static string Compose(IEnumerable<KeyPath> accountPaths, double minSelfTransferPercent = DefaultMinSelfTransferPercent)
