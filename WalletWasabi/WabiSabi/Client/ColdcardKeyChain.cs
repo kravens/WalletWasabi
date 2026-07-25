@@ -45,7 +45,7 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 
 	/// <summary>The device HSM policy has no round counter, so the user's round budget is enforced here:
 	/// once it is used up, no new round can be entered until the user authorizes again.</summary>
-	public bool RoundsExhausted => _roundsSigned >= _maxRounds;
+	public bool RoundsExhausted => Volatile.Read(ref _roundsSigned) >= _maxRounds;
 
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
@@ -130,7 +130,10 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		// Only our inputs can finalize; the foreign ones are witness-utxo-only and unsigned, so a full
 		// Finalize() would throw on every multi-party round.
 		signedPsbt.TryFinalize(out _);
-		_roundsSigned++;
+
+		// Written under _signingLock but read by GetOwnershipProof, which runs unsynchronised while
+		// inputs register in parallel.
+		Interlocked.Increment(ref _roundsSigned);
 
 		var witnesses = new Dictionary<OutPoint, WitScript>();
 		foreach (var input in signedPsbt.Inputs)
