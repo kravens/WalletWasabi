@@ -143,6 +143,20 @@ public class CoinJoinClient
 					Logger.LogInfo(FormatLog(roundSkippedMessage, currentRoundState));
 					throw new CoinJoinClientException(CoinjoinError.MinInputCountTooLow, roundSkippedMessage);
 				}
+				if (_keyChain.MinRoundInputs is { } deviceFloor && deviceFloor > roundParameters.MaxInputCountByRound)
+				{
+					// The signer will refuse a round this small, and no amount of waiting changes that: the
+					// coordinator caps every round below the floor the device was given. Registering anyway
+					// would spend the round budget on refusals and look like a broken device, so say plainly
+					// which of the two numbers has to move.
+					string roundSkippedMessage =
+						$"This coordinator builds rounds of at most {roundParameters.MaxInputCountByRound} inputs, "
+						+ $"but the signing device requires at least {deviceFloor}, so it would refuse to sign. "
+						+ "Lower the minimum input count in the coinjoin settings, or use a coordinator that "
+						+ "builds larger rounds.";
+					Logger.LogWarning(FormatLog(roundSkippedMessage, currentRoundState));
+					throw new CoinJoinClientException(CoinjoinError.MinInputCountTooLow, roundSkippedMessage);
+				}
 			}
 
 			coinCandidates = coinCandidatesFunc();

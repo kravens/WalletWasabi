@@ -27,6 +27,10 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 {
 	private readonly IWalletModel _wallet;
 
+	/// <summary>What a coordinator running stock Wasabi caps a round at (<c>WabiSabiConfig</c>). Only a
+	/// hint: each coordinator picks its own, and the real figure arrives with the round parameters.</summary>
+	private const int DefaultMaxInputCountByRound = 100;
+
 	[AutoNotify] private string _anonScoreTarget;
 	[AutoNotify] private bool _nonPrivateCoinIsolation;
 	[AutoNotify] private bool _maximizePrivacyProfileSelected;
@@ -292,6 +296,18 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		{
 			_wallet.Settings.ColdcardMinInputs = count;
 			_wallet.Settings.Save();
+
+			// A round can never hold more inputs than the coordinator's own cap, so a floor above it means
+			// the device refuses every round it is ever offered and coinjoin simply stops with nothing
+			// obviously wrong. The real cap is only known once a round arrives, and the client says so
+			// plainly then; this is the earlier, cheaper hint, against the value Wasabi itself ships.
+			if (count > DefaultMaxInputCountByRound)
+			{
+				errors.Add(
+					ErrorSeverity.Warning,
+					$"Above {DefaultMaxInputCountByRound}, more than many coordinators put in one round. If this "
+					+ "is higher than the coordinator's limit, the device will refuse every round.");
+			}
 		}
 		else
 		{

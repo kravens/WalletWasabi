@@ -47,6 +47,9 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	/// once it is used up, no new round can be entered until the user authorizes again.</summary>
 	public bool RoundsExhausted => Volatile.Read(ref _roundsSigned) >= _maxRounds;
 
+	/// <inheritdoc />
+	public int? MinRoundInputs => _keyManager.ColdcardMinInputs > 0 ? _keyManager.ColdcardMinInputs : null;
+
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
 		if (RoundsExhausted)
