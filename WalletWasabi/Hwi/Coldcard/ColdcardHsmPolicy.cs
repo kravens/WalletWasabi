@@ -115,6 +115,16 @@ public static class ColdcardHsmPolicy
 	}
 
 	/// <summary>
+	/// Fingerprints the policy we composed, so a later session can tell whether the settings behind it have
+	/// changed. Deliberately over our own JSON rather than the device's policy hash: the device's hash proves
+	/// what it is enforcing, but says nothing about what the user has since asked for. Comparing the two is
+	/// what catches a limit that was edited while the device was already locked into the previous one.
+	/// </summary>
+	public static string Fingerprint(string policyJson) =>
+		Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(policyJson)))
+			.ToLowerInvariant();
+
+	/// <summary>
 	/// Throws <see cref="NotSupportedException"/> for a Coldcard model that can't run this policy, turning an
 	/// obscure device error into a clear message. Two models are permanent dead ends, confirmed on hardware:
 	/// the <b>Q</b> disables the classic HSM command set entirely (it ships SSSP / Co-Sign instead — the device

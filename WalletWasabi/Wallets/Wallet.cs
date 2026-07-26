@@ -213,7 +213,11 @@ public class Wallet : BackgroundService
 			}
 
 			// Fail early with a clear message if this device's firmware can't run the policy (Mk3/older, Q).
-			ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(device.GetVersion());
+			// Logged because which build is on the device decides which policy fields it understands, and
+			// that is the first thing worth knowing when a policy is rejected.
+			var deviceVersion = device.GetVersion();
+			Logger.LogInfo($"Coldcard firmware: {deviceVersion.Replace('\n', ' ')}");
+			ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(deviceVersion);
 
 			// Remember which policy the device ended up running. HSM mode outlives this process, so on the
 			// next start that recorded hash is what tells us the device is still enforcing what was agreed
@@ -222,7 +226,7 @@ public class Wallet : BackgroundService
 			try
 			{
 				activeHash = await Task.Run(
-					() => device.StartHsm(policyJson, KeyManager.ColdcardActivePolicyHash, cancellationToken),
+					() => device.StartHsm(policyJson, KeyManager.ColdcardActivePolicyHash, KeyManager.ColdcardApprovedPolicyFingerprint, cancellationToken),
 					cancellationToken).ConfigureAwait(false);
 			}
 			catch (ColdcardException e) when (e.Message.Contains("Unknown item", StringComparison.Ordinal))
@@ -248,13 +252,17 @@ public class Wallet : BackgroundService
 					MinInputs: null);
 				var legacyJson = ColdcardHsmPolicy.Compose(accountPaths, legacy);
 				activeHash = await Task.Run(
-					() => device.StartHsm(legacyJson, KeyManager.ColdcardActivePolicyHash, cancellationToken),
+					() => device.StartHsm(legacyJson, KeyManager.ColdcardActivePolicyHash, KeyManager.ColdcardApprovedPolicyFingerprint, cancellationToken),
 					cancellationToken).ConfigureAwait(false);
 			}
 
+			// Both are recorded together: the device hash says what it is enforcing, the fingerprint says
+			// which of our settings produced it. Only the pair can tell a later session that the limits
+			// were edited while the device stayed locked into the previous ones.
 			if (activeHash is { Length: > 0 } && activeHash != KeyManager.ColdcardActivePolicyHash)
 			{
 				KeyManager.ColdcardActivePolicyHash = activeHash;
+				KeyManager.ColdcardApprovedPolicyFingerprint = ColdcardHsmPolicy.Fingerprint(policyJson);
 				KeyManager.ToFile();
 			}
 

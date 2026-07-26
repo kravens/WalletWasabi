@@ -232,6 +232,12 @@ public class KeyManager
 	/// and a drift there would cry wolf on a perfectly good policy.</summary>
 	public string? ColdcardActivePolicyHash { get; set; }
 
+	/// <summary>Hash of the policy JSON this wallet composed when that device policy was approved. Paired
+	/// with <see cref="ColdcardActivePolicyHash"/>: the device hash says what is being enforced, this says
+	/// which settings produced it, and a difference means the limits were edited while the device stayed
+	/// locked into the previous ones.</summary>
+	public string? ColdcardApprovedPolicyFingerprint { get; set; }
+
 	/// <summary>Which hardware vendor signs this wallet's coinjoins. Vendors that keep coinjoin funds in the
 	/// wallet's default accounts (Coldcard, and the Krux/Passport work to come) cannot be recognised from a
 	/// key path the way a Trezor's SLIP-25 account can, so the vendor is recorded explicitly at import.
@@ -855,6 +861,7 @@ public class KeyManager
 			("ColdcardMinInputs", Encode.Int(keyManager.ColdcardMinInputs)),
 			("ColdcardPeriodMinutes", Encode.Int(keyManager.ColdcardPeriodMinutes)),
 			("ColdcardActivePolicyHash", Encode.String(keyManager.ColdcardActivePolicyHash ?? "")),
+			("ColdcardApprovedPolicyFingerprint", Encode.String(keyManager.ColdcardApprovedPolicyFingerprint ?? "")),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
 			("CoinJoinDisabled", Encode.Bool(keyManager.CoinJoinDisabled)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
@@ -903,6 +910,7 @@ public class KeyManager
 				ColdcardMinInputs = get.Optional("ColdcardMinInputs", Decode.Int, ColdcardHsmPolicy.DefaultMinInputs),
 				ColdcardPeriodMinutes = get.Optional("ColdcardPeriodMinutes", Decode.Int, ColdcardHsmPolicy.DefaultPeriodMinutes),
 				ColdcardActivePolicyHash = get.Optional("ColdcardActivePolicyHash", Decode.String) is { Length: > 0 } h ? h : null,
+				ColdcardApprovedPolicyFingerprint = get.Optional("ColdcardApprovedPolicyFingerprint", Decode.String) is { Length: > 0 } fp ? fp : null,
 				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
 				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
 					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),

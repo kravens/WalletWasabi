@@ -196,7 +196,7 @@ public sealed class ColdcardDevice : IDisposable
 	/// <returns>The hash of the policy now active, when this wallet approved it — freshly, or previously and
 	/// matched here. Null when the device is running something else, so a policy nobody agreed to never gets
 	/// recorded as the approved one.</returns>
-	public string? StartHsm(string policyJson, string? previouslyApprovedHash, CancellationToken cancellationToken)
+	public string? StartHsm(string policyJson, string? previouslyApprovedHash, string? previouslyApprovedFingerprint, CancellationToken cancellationToken)
 	{
 		lock (_gate)
 		{
@@ -209,6 +209,21 @@ public sealed class ColdcardDevice : IDisposable
 				var approved = _installedPolicyHash ?? previouslyApprovedHash;
 				if (approved is not null && approved == current.PolicyHash)
 				{
+					// Right policy, but is it still the one being asked for? The device hash proves what it
+					// enforces and nothing about what the user has since configured, so a limit edited while
+					// the device sat in HSM would otherwise be saved, shown as active, and quietly not
+					// applied. Tightening a limit and not getting it is the bad direction, so stop rather
+					// than coinjoin under rules nobody agreed to.
+					var wanted = ColdcardHsmPolicy.Fingerprint(policyJson);
+					if (previouslyApprovedFingerprint is not null && previouslyApprovedFingerprint != wanted)
+					{
+						throw new ColdcardException(
+							"The coinjoin limits here have changed since this Coldcard approved its policy, and "
+							+ "HSM mode cannot be changed while it is running. The device is still enforcing the "
+							+ "previous limits. Reboot the Coldcard and start coinjoin again to approve the new "
+							+ "ones.");
+					}
+
 					Logger.LogInfo($"The Coldcard is running the policy this wallet approved (hash {approved}).");
 					return current.PolicyHash;
 				}
