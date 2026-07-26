@@ -6,6 +6,7 @@ using WalletWasabi.Fluent.Helpers;
 using WalletWasabi.Fluent.Infrastructure;
 using WalletWasabi.Helpers;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Models;
 using WalletWasabi.Wallets;
@@ -125,6 +126,18 @@ public partial class WalletSettingsModel : ReactiveObject
 
 	/// <summary>Only a Coldcard enforces a self-transfer floor, so only it shows that setting.</summary>
 	public bool IsColdcardCoinJoinWallet => _keyManager.GetCoinJoinVendor() == HardwareCoinJoinVendor.Coldcard;
+
+	/// <summary>
+	/// True when these limits are not the ones the Coldcard is enforcing. HSM mode cannot be changed while it
+	/// runs — deliberately, since a host that could end it could also drop every limit — so a value edited
+	/// after the device was locked in is saved here and simply not applied until it reboots. Worth saying at
+	/// the moment of editing: coinjoin refuses later anyway, but by then the reason is far from the cause.
+	/// False before any policy has been approved, when there is nothing to disagree with.
+	/// </summary>
+	public bool IsColdcardPolicyOutOfSync =>
+		IsColdcardCoinJoinWallet
+		&& _keyManager.ColdcardApprovedPolicyFingerprint is { Length: > 0 } approved
+		&& approved != ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.ComposeFor(_keyManager));
 
 	/// <summary>
 	/// Where the round budget and fee cap are actually enforced, which differs by vendor and must not be

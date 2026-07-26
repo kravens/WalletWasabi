@@ -115,6 +115,28 @@ public static class ColdcardHsmPolicy
 	}
 
 	/// <summary>
+	/// The policy this wallet's current settings would install. One method rather than two so the settings
+	/// screen and the authorization path can never disagree about what "the configured policy" is — the whole
+	/// point of the fingerprint is comparing them, which is worthless if they are composed differently.
+	/// </summary>
+	public static string ComposeFor(Blockchain.Keys.KeyManager keyManager)
+	{
+		var accountPaths = new List<KeyPath> { keyManager.SegwitAccountKeyPath };
+		if (keyManager.TaprootExtPubKey is not null)
+		{
+			accountPaths.Add(keyManager.TaprootAccountKeyPath);
+		}
+
+		return Compose(accountPaths, new ColdcardLimits(
+			MinSelfTransferPercent: keyManager.ColdcardMinSelfTransferPercent,
+			MaxSatsLeaving: keyManager.ColdcardMaxSatsLeaving,
+			MaxTransactions: keyManager.TrezorCoinjoinMaxRounds,
+			MaxTransactionsPerPeriod: keyManager.ColdcardMaxTransactionsPerPeriod,
+			PeriodMinutes: keyManager.ColdcardPeriodMinutes,
+			MinInputs: keyManager.ColdcardMinInputs > 0 ? keyManager.ColdcardMinInputs : null));
+	}
+
+	/// <summary>
 	/// Fingerprints the policy we composed, so a later session can tell whether the settings behind it have
 	/// changed. Deliberately over our own JSON rather than the device's policy hash: the device's hash proves
 	/// what it is enforcing, but says nothing about what the user has since asked for. Comparing the two is

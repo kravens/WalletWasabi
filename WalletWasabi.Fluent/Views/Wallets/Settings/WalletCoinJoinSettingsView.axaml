@@ -135,6 +135,18 @@
     </DockPanel>
 
     <!--
+      HSM mode cannot be changed while it runs, which is the point of it: a host able to end it could
+      also drop every limit above. So a value edited after the device was locked in is saved here and
+      simply not applied. Coinjoin refuses later anyway, but by then the reason is far from the cause.
+    -->
+    <StackPanel IsVisible="{Binding ColdcardPolicyOutOfSync}" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+      <PathIcon Data="{StaticResource warning_regular}" Height="15"
+                Foreground="{DynamicResource WarningMessageForeground}" VerticalAlignment="Top" />
+      <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource WarningMessageForeground}"
+                 Text="These limits are not the ones the Coldcard is enforcing. Reboot the device and start coinjoin to approve them." />
+    </StackPanel>
+
+    <!--
       What the device reports it is enforcing, in its own words, next to the settings above. The device
       is what actually refuses a transaction, so its account of the rules is the one that counts; the
       hash is there to be compared with the one shown on the Coldcard screen when the policy was approved.

@@ -188,19 +188,13 @@ public class Wallet : BackgroundService
 		// absolute cap on value leaving (guards large ones), a transaction count (bounds the session) and a
 		// per-period count (bounds a burst of rounds farmed for their fees). The sat/vByte cap has no HSM
 		// equivalent and stays client-side, where CoinJoinTrackerFactory clamps the round selection.
+		// Composed in one shared place, so the settings screen compares against exactly what would be sent.
 		var accountPaths = new List<KeyPath> { KeyManager.SegwitAccountKeyPath };
 		if (KeyManager.TaprootExtPubKey is not null)
 		{
 			accountPaths.Add(KeyManager.TaprootAccountKeyPath);
 		}
-		var limits = new ColdcardHsmPolicy.ColdcardLimits(
-			MinSelfTransferPercent: KeyManager.ColdcardMinSelfTransferPercent,
-			MaxSatsLeaving: KeyManager.ColdcardMaxSatsLeaving,
-			MaxTransactions: maxRounds,
-			MaxTransactionsPerPeriod: KeyManager.ColdcardMaxTransactionsPerPeriod,
-			PeriodMinutes: KeyManager.ColdcardPeriodMinutes,
-			MinInputs: KeyManager.ColdcardMinInputs > 0 ? KeyManager.ColdcardMinInputs : null);
-		var policyJson = ColdcardHsmPolicy.Compose(accountPaths, limits);
+		var policyJson = ColdcardHsmPolicy.ComposeFor(KeyManager);
 
 		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
 		try

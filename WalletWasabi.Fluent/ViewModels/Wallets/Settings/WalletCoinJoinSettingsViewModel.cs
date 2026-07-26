@@ -45,6 +45,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _coldcardMaxSatsLeaving;
 	[AutoNotify] private string _coldcardMaxTxnPerPeriod;
 	[AutoNotify] private string _coldcardMinInputs;
+	[AutoNotify] private bool _coldcardPolicyOutOfSync;
 	[AutoNotify] private string? _devicePolicySummary;
 	[AutoNotify] private string? _devicePolicyHash;
 	[AutoNotify] private bool _isOutputWalletSelectionEnabled = true;
@@ -80,6 +81,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_coldcardMaxSatsLeaving = _wallet.Settings.ColdcardMaxSatsLeaving.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMaxTxnPerPeriod = _wallet.Settings.ColdcardMaxTransactionsPerPeriod.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMinInputs = _wallet.Settings.ColdcardMinInputs.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		_coldcardPolicyOutOfSync = _wallet.Settings.IsColdcardPolicyOutOfSync;
 
 		_selectedOutputWallet = UiContext.WalletRepository.Wallets.Items.First(x => x.Id == _wallet.Settings.OutputWalletId);
 
@@ -252,6 +254,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		{
 			_wallet.Settings.ColdcardMinSelfTransferPercent = percent;
 			_wallet.Settings.Save();
+			RefreshColdcardPolicySync();
 		}
 		else
 		{
@@ -268,6 +271,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		{
 			_wallet.Settings.ColdcardMaxSatsLeaving = sats;
 			_wallet.Settings.Save();
+			RefreshColdcardPolicySync();
 		}
 		else
 		{
@@ -281,12 +285,18 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		{
 			_wallet.Settings.ColdcardMaxTransactionsPerPeriod = count;
 			_wallet.Settings.Save();
+			RefreshColdcardPolicySync();
 		}
 		else
 		{
 			errors.Add(ErrorSeverity.Error, "Must be a whole number between 1 and 500.");
 		}
 	}
+
+	/// <summary>Re-reads whether the saved limits still match the policy the device is enforcing. Called after
+	/// each validator, since each one may have just written a value that puts them out of step.</summary>
+	private void RefreshColdcardPolicySync() =>
+		ColdcardPolicyOutOfSync = _wallet.Settings.IsColdcardPolicyOutOfSync;
 
 	private void ValidateColdcardMinInputs(IValidationErrors errors)
 	{
@@ -296,6 +306,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		{
 			_wallet.Settings.ColdcardMinInputs = count;
 			_wallet.Settings.Save();
+			RefreshColdcardPolicySync();
 
 			// A round can never hold more inputs than the coordinator's own cap, so a floor above it means
 			// the device refuses every round it is ever offered and coinjoin simply stops with nothing
