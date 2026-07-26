@@ -40,6 +40,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _coldcardMinSelfTransfer;
 	[AutoNotify] private string _coldcardMaxSatsLeaving;
 	[AutoNotify] private string _coldcardMaxTxnPerPeriod;
+	[AutoNotify] private string _coldcardMinInputs;
 	[AutoNotify] private string? _devicePolicySummary;
 	[AutoNotify] private string? _devicePolicyHash;
 	[AutoNotify] private bool _isOutputWalletSelectionEnabled = true;
@@ -74,6 +75,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_coldcardMinSelfTransfer = _wallet.Settings.ColdcardMinSelfTransferPercent.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMaxSatsLeaving = _wallet.Settings.ColdcardMaxSatsLeaving.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMaxTxnPerPeriod = _wallet.Settings.ColdcardMaxTransactionsPerPeriod.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		_coldcardMinInputs = _wallet.Settings.ColdcardMinInputs.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
 		_selectedOutputWallet = UiContext.WalletRepository.Wallets.Items.First(x => x.Id == _wallet.Settings.OutputWalletId);
 
@@ -125,6 +127,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		this.ValidateProperty(x => x.ColdcardMinSelfTransfer, ValidateColdcardMinSelfTransfer);
 		this.ValidateProperty(x => x.ColdcardMaxSatsLeaving, ValidateColdcardMaxSatsLeaving);
 		this.ValidateProperty(x => x.ColdcardMaxTxnPerPeriod, ValidateColdcardMaxTxnPerPeriod);
+		this.ValidateProperty(x => x.ColdcardMinInputs, ValidateColdcardMinInputs);
 
 		this.WhenAnyValue(x => x.PlebStopThreshold)
 			.Skip(1)
@@ -278,6 +281,21 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		else
 		{
 			errors.Add(ErrorSeverity.Error, "Must be a whole number between 1 and 500.");
+		}
+	}
+
+	private void ValidateColdcardMinInputs(IValidationErrors errors)
+	{
+		// 0 switches the device-side floor off, leaving only Wasabi's minimum input count — which a host
+		// that has been taken over can simply skip. The ceiling matches the device's own range for the field.
+		if (int.TryParse(ColdcardMinInputs, out var count) && count is 0 or (>= 2 and <= 10_000))
+		{
+			_wallet.Settings.ColdcardMinInputs = count;
+			_wallet.Settings.Save();
+		}
+		else
+		{
+			errors.Add(ErrorSeverity.Error, "Must be 0 to disable, or a whole number between 2 and 10,000.");
 		}
 	}
 

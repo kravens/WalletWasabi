@@ -198,7 +198,8 @@ public class Wallet : BackgroundService
 			MaxSatsLeaving: KeyManager.ColdcardMaxSatsLeaving,
 			MaxTransactions: maxRounds,
 			MaxTransactionsPerPeriod: KeyManager.ColdcardMaxTransactionsPerPeriod,
-			PeriodMinutes: KeyManager.ColdcardPeriodMinutes);
+			PeriodMinutes: KeyManager.ColdcardPeriodMinutes,
+			MinInputs: KeyManager.ColdcardMinInputs > 0 ? KeyManager.ColdcardMinInputs : null);
 		var policyJson = ColdcardHsmPolicy.Compose(accountPaths, limits);
 
 		var device = await Task.Run(() => ColdcardDevice.Open(), cancellationToken).ConfigureAwait(false);
@@ -235,15 +236,16 @@ public class Wallet : BackgroundService
 				Logger.LogWarning(
 					$"This Coldcard's firmware does not understand part of the coinjoin policy ({e.Message}). "
 					+ $"Falling back to a self-transfer floor of {ColdcardHsmPolicy.FloorWithoutAbsoluteCap}% with "
-					+ "no absolute cap, no device-side transaction count and no rate limit. The round budget then "
-					+ "rests on Wasabi alone, which cannot bind a host that has been taken over. Update the "
-					+ "firmware to have the device enforce these.");
+					+ "no absolute cap, no device-side transaction count, no rate limit and no minimum input "
+					+ "count. The round budget and the round's size then rest on Wasabi alone, which cannot bind "
+					+ "a host that has been taken over. Update the firmware to have the device enforce these.");
 
 				var legacy = new ColdcardHsmPolicy.ColdcardLimits(
 					MinSelfTransferPercent: ColdcardHsmPolicy.FloorWithoutAbsoluteCap,
 					MaxSatsLeaving: null,
 					MaxTransactions: null,
-					MaxTransactionsPerPeriod: null);
+					MaxTransactionsPerPeriod: null,
+					MinInputs: null);
 				var legacyJson = ColdcardHsmPolicy.Compose(accountPaths, legacy);
 				activeHash = await Task.Run(
 					() => device.StartHsm(legacyJson, KeyManager.ColdcardActivePolicyHash, cancellationToken),

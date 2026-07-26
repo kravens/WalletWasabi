@@ -128,6 +128,12 @@
       <TextBox Classes="standalone" Text="{Binding ColdcardMaxTxnPerPeriod}" DockPanel.Dock="Right" Watermark="6" MaxLength="3" />
     </DockPanel>
 
+    <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"
+               ToolTip.Tip="The fewest participants' inputs a round may have before the Coldcard will sign it — everyone's, not just yours. Wasabi has its own minimum, but Wasabi is what picks the round, so only the device can enforce this against a compromised computer. It rules out a round with nobody in it but you; it is not an anonymity set, since a coordinator can pad a round with its own inputs. 0 turns it off.">
+      <TextBlock Text="Minimum inputs in a round" />
+      <TextBox Classes="standalone" Text="{Binding ColdcardMinInputs}" DockPanel.Dock="Right" Watermark="21" MaxLength="5" />
+    </DockPanel>
+
     <!--
       What the device reports it is enforcing, in its own words, next to the settings above. The device
       is what actually refuses a transaction, so its account of the rules is the one that counts; the

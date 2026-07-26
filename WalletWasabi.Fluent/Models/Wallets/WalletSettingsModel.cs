@@ -29,6 +29,7 @@ public partial class WalletSettingsModel : ReactiveObject
 	[AutoNotify] private double _coldcardMinSelfTransferPercent;
 	[AutoNotify] private long _coldcardMaxSatsLeaving;
 	[AutoNotify] private int _coldcardMaxTransactionsPerPeriod;
+	[AutoNotify] private int _coldcardMinInputs;
 	[AutoNotify] private bool _nonPrivateCoinIsolation;
 	[AutoNotify] private WalletId? _outputWalletId;
 	[AutoNotify] private ScriptType _defaultReceiveScriptType;
@@ -53,6 +54,7 @@ public partial class WalletSettingsModel : ReactiveObject
 		_coldcardMinSelfTransferPercent = _keyManager.ColdcardMinSelfTransferPercent;
 		_coldcardMaxSatsLeaving = _keyManager.ColdcardMaxSatsLeaving;
 		_coldcardMaxTransactionsPerPeriod = _keyManager.ColdcardMaxTransactionsPerPeriod;
+		_coldcardMinInputs = _keyManager.ColdcardMinInputs;
 		_nonPrivateCoinIsolation = _keyManager.NonPrivateCoinIsolation;
 
 		if (!isNewWallet)
@@ -81,7 +83,8 @@ public partial class WalletSettingsModel : ReactiveObject
 				x => x.TrezorCoinjoinMaxMiningFeeRate,
 				x => x.ColdcardMinSelfTransferPercent,
 				x => x.ColdcardMaxSatsLeaving,
-				x => x.ColdcardMaxTransactionsPerPeriod)
+				x => x.ColdcardMaxTransactionsPerPeriod,
+				x => x.ColdcardMinInputs)
 			.Skip(1)
 			.Do(_ => SetValues())
 			.Subscribe();
@@ -173,6 +176,7 @@ public partial class WalletSettingsModel : ReactiveObject
 		_keyManager.ColdcardMinSelfTransferPercent = ColdcardMinSelfTransferPercent;
 		_keyManager.ColdcardMaxSatsLeaving = ColdcardMaxSatsLeaving;
 		_keyManager.ColdcardMaxTransactionsPerPeriod = ColdcardMaxTransactionsPerPeriod;
+		_keyManager.ColdcardMinInputs = ColdcardMinInputs;
 		_keyManager.NonPrivateCoinIsolation = NonPrivateCoinIsolation;
 		_keyManager.DefaultSendWorkflow = DefaultSendWorkflow;
 		_keyManager.DefaultReceiveScriptType = ScriptType.ToScriptPubKeyType(DefaultReceiveScriptType);

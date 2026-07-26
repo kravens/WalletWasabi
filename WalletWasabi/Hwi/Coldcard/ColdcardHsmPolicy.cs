@@ -42,6 +42,16 @@ public static class ColdcardHsmPolicy
 	/// <summary>Length of that period, in minutes.</summary>
 	public const int DefaultPeriodMinutes = 60;
 
+	/// <summary>Fewest inputs the whole round transaction may have — every participant's, not ours. The client
+	/// already has a minimum input count, but the host is what picks the round, so that check is worth nothing
+	/// against a host that has been taken over: it would simply join a round containing nobody but us and a
+	/// coordinator that then learns the entire mapping. The device is handed the full round transaction, so it
+	/// can count for itself. This is a floor on how pointless a round may be, <b>not</b> an anonymity set — a
+	/// coordinator willing to register its own inputs can pad any round to any count and still know every link.
+	/// 21 is comfortably below a real round (mainnet rounds run to the hundreds) and far above the degenerate
+	/// ones this exists to refuse.</summary>
+	public const int DefaultMinInputs = 21;
+
 	/// <summary>What the device will enforce while it signs unattended. Grouped because the parts are only
 	/// meaningful together: the ratio guards small amounts, the absolute cap guards large ones, the total
 	/// bounds the session and the rate bounds the burst.</summary>
@@ -50,12 +60,15 @@ public static class ColdcardHsmPolicy
 	/// <param name="MaxSatsLeaving">Null for firmware predating <c>max_sats_leaving</c>. When it is null the
 	/// ratio is the only value guard, so <see cref="FloorWithoutAbsoluteCap"/> should be used.</param>
 	/// <param name="MaxTransactionsPerPeriod">Null for firmware predating <c>max_txn_per_period</c>.</param>
+	/// <param name="MinInputs">Null for firmware predating <c>min_inputs</c>, and when the user has turned the
+	/// floor off. Only the client-side minimum input count applies then, which the host can ignore.</param>
 	public record ColdcardLimits(
 		double MinSelfTransferPercent = DefaultMinSelfTransferPercent,
 		long? MaxSatsLeaving = DefaultMaxSatsLeaving,
 		int? MaxTransactions = null,
 		int? MaxTransactionsPerPeriod = DefaultMaxTransactionsPerPeriod,
-		int PeriodMinutes = DefaultPeriodMinutes);
+		int PeriodMinutes = DefaultPeriodMinutes,
+		int? MinInputs = DefaultMinInputs);
 
 	public static string Compose(IEnumerable<KeyPath> accountPaths, ColdcardLimits limits)
 	{
@@ -78,6 +91,10 @@ public static class ColdcardHsmPolicy
 		if (limits.MaxTransactionsPerPeriod is { } rate)
 		{
 			rule["max_txn_per_period"] = rate;
+		}
+		if (limits.MinInputs is { } minInputs)
+		{
+			rule["min_inputs"] = minInputs;
 		}
 
 		var policy = new Dictionary<string, object>

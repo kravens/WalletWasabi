@@ -220,6 +220,11 @@ public class KeyManager
 	public int ColdcardMaxTransactionsPerPeriod { get; set; } = ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod;
 	public int ColdcardPeriodMinutes { get; set; } = ColdcardHsmPolicy.DefaultPeriodMinutes;
 
+	/// <summary>Fewest inputs a round transaction may have before the device will sign it, counting every
+	/// participant. 0 turns the device-side floor off and leaves only Wasabi's own minimum input count, which
+	/// a compromised host can ignore.</summary>
+	public int ColdcardMinInputs { get; set; } = ColdcardHsmPolicy.DefaultMinInputs;
+
 	/// <summary>Hash of the HSM policy this wallet last installed and the user approved on the device.
 	/// Kept so a later session can ask the device what it is running and compare, which is the end-to-end
 	/// check that the limits being enforced are the ones that were agreed to. Stored rather than recomputed
@@ -847,6 +852,7 @@ public class KeyManager
 			("ColdcardMinSelfTransferPercent", Encode.Decimal((decimal)keyManager.ColdcardMinSelfTransferPercent)),
 			("ColdcardMaxSatsLeaving", Encode.Int((int)keyManager.ColdcardMaxSatsLeaving)),
 			("ColdcardMaxTransactionsPerPeriod", Encode.Int(keyManager.ColdcardMaxTransactionsPerPeriod)),
+			("ColdcardMinInputs", Encode.Int(keyManager.ColdcardMinInputs)),
 			("ColdcardPeriodMinutes", Encode.Int(keyManager.ColdcardPeriodMinutes)),
 			("ColdcardActivePolicyHash", Encode.String(keyManager.ColdcardActivePolicyHash ?? "")),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
@@ -894,6 +900,7 @@ public class KeyManager
 				ColdcardMinSelfTransferPercent = (double)get.Optional("ColdcardMinSelfTransferPercent", Decode.Decimal, (decimal)DefaultColdcardMinSelfTransferPercent),
 				ColdcardMaxSatsLeaving = get.Optional("ColdcardMaxSatsLeaving", Decode.Int, (int)ColdcardHsmPolicy.DefaultMaxSatsLeaving),
 				ColdcardMaxTransactionsPerPeriod = get.Optional("ColdcardMaxTransactionsPerPeriod", Decode.Int, ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod),
+				ColdcardMinInputs = get.Optional("ColdcardMinInputs", Decode.Int, ColdcardHsmPolicy.DefaultMinInputs),
 				ColdcardPeriodMinutes = get.Optional("ColdcardPeriodMinutes", Decode.Int, ColdcardHsmPolicy.DefaultPeriodMinutes),
 				ColdcardActivePolicyHash = get.Optional("ColdcardActivePolicyHash", Decode.String) is { Length: > 0 } h ? h : null,
 				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
