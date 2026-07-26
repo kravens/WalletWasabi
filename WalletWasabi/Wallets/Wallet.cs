@@ -203,7 +203,9 @@ public class Wallet : BackgroundService
 			if (KeyManager.MasterFingerprint is { } expectedFingerprint
 				&& !BitConverter.GetBytes(device.MasterFingerprint).SequenceEqual(expectedFingerprint.ToBytes()))
 			{
-				throw new InvalidOperationException("The connected Coldcard is not the device of this wallet. Connect the right Coldcard and try again.");
+				throw new ColdcardException(
+					"the connected device is not this wallet's Coldcard. Connect the right one and try again.",
+					"Wrong Coldcard connected");
 			}
 
 			// Fail early with a clear message if this device's firmware can't run the policy (Mk3/older, Q).

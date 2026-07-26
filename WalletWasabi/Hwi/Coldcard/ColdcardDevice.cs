@@ -59,7 +59,9 @@ public sealed class ColdcardDevice : IDisposable
 			var (fingerprint, masterXpub) = transport.StartEncryption();
 			if (fingerprint != MasterFingerprint)
 			{
-				throw new ColdcardException("a different Coldcard is now connected. Reconnect the wallet's own device.");
+				throw new ColdcardException(
+					"a different Coldcard is now connected. Reconnect the wallet's own device.",
+					"Wrong Coldcard connected");
 			}
 
 			_transport = transport;
@@ -178,6 +180,31 @@ public sealed class ColdcardDevice : IDisposable
 		return "Check the device screen for the reason.";
 	}
 
+	/// <summary>The refusal reason trimmed to fit the coinjoin status line, which is about 45 characters
+	/// and truncates without an ellipsis. The device's own words are the most useful thing we can show -
+	/// "too few inputs: 4, need 21" tells the user exactly what to change - so keep them when they fit and
+	/// fall back to something generic only when they do not. The full text always goes to the log.</summary>
+	private static string ShortRefusal(string reason)
+	{
+		// The device prefixes its reasons with which rule tripped; the number means nothing to the user.
+		var text = reason;
+		var colon = text.IndexOf(": ", StringComparison.Ordinal);
+		if (text.StartsWith("rule #", StringComparison.OrdinalIgnoreCase) && colon > 0)
+		{
+			text = text[(colon + 2)..];
+		}
+
+		// One sentence only: some reasons carry a follow-up telling the user what to do, which the log keeps.
+		var stop = text.IndexOf(". ", StringComparison.Ordinal);
+		if (stop > 0)
+		{
+			text = text[..stop];
+		}
+
+		text = text.Trim().TrimEnd('.');
+		return text.Length is > 0 and <= 34 ? $"Refused: {text}" : "Device refused to sign";
+	}
+
 	/// <summary>The firmware's AF_* address format constant (see its <c>public_constants.py</c>).</summary>
 	private static uint AddressFormatOf(ScriptPubKeyType scriptType) => scriptType switch
 	{
@@ -221,7 +248,8 @@ public sealed class ColdcardDevice : IDisposable
 							"The coinjoin limits here have changed since this Coldcard approved its policy, and "
 							+ "HSM mode cannot be changed while it is running. The device is still enforcing the "
 							+ "previous limits. Reboot the Coldcard and start coinjoin again to approve the new "
-							+ "ones.");
+							+ "ones.",
+							"Reset Coldcard / Exit HSM");
 					}
 
 					Logger.LogInfo($"The Coldcard is running the policy this wallet approved (hash {approved}).");
@@ -281,11 +309,15 @@ public sealed class ColdcardDevice : IDisposable
 				}
 				if (!status.ApprovalWait)
 				{
-					throw new ColdcardException("The HSM policy was refused on the device.");
+					throw new ColdcardException(
+						"The HSM policy was refused on the device.",
+						"Policy refused on device");
 				}
 				if (DateTime.UtcNow > deadline)
 				{
-					throw new ColdcardException("Timed out waiting for the HSM policy approval on the device.");
+					throw new ColdcardException(
+						"Timed out waiting for the HSM policy approval on the device.",
+						"Policy approval timed out");
 				}
 				Thread.Sleep(500);
 			}
@@ -433,7 +465,8 @@ public sealed class ColdcardDevice : IDisposable
 				// the self-transfer floor, an unlisted path, or the transaction count being used up (which
 				// needs a reboot, since an HSM session cannot be reset). Bare "refused" would send them
 				// looking in the wrong place.
-				throw new ColdcardException($"signing was refused by the device. {DescribeLastRefusal()}");
+				var refusal = DescribeLastRefusal();
+				throw new ColdcardException($"signing was refused by the device. {refusal}", ShortRefusal(refusal));
 			}
 			// 'okay' (empty) means still working — poll again.
 			Thread.Sleep(250);

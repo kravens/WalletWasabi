@@ -54,7 +54,9 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	{
 		if (RoundsExhausted)
 		{
-			throw new ColdcardException($"The authorized {_maxRounds} coinjoin rounds are used up. Authorize the Coldcard again to continue.");
+			throw new ColdcardException(
+				$"The authorized {_maxRounds} coinjoin rounds are used up. Authorize the Coldcard again to continue.",
+				"Round budget used up");
 		}
 
 		var keyPath = _keyManager.TryGetKeyPath(destination.ScriptPubKey)

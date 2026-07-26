@@ -160,4 +160,16 @@ public class ColdcardException : Exception
 	public ColdcardException(string message) : base("Coldcard: " + message)
 	{
 	}
+
+	/// <param name="userMessage">What the coinjoin status line should say. That control is ~45 characters
+	/// wide and truncates without an ellipsis, so anything longer loses its ending — which is where the
+	/// instruction lives. Keep it to a few words and leave the reasoning to <paramref name="message"/>,
+	/// which goes to the log.</param>
+	public ColdcardException(string message, string userMessage) : base("Coldcard: " + message)
+	{
+		UserMessage = userMessage;
+	}
+
+	/// <summary>Short form for the status line, or null to fall back to the full message.</summary>
+	public string? UserMessage { get; }
 }

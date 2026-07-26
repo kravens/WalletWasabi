@@ -154,8 +154,14 @@ public partial class WalletCoinjoinModel : ReactiveObject
 
 			// ColdcardException and the wrong-device check carry text written for the user, naming the
 			// setting to change or the device to swap. Anything else is an internal failure whose message
-			// would not help, so those keep the generic wording.
-			AuthorizationError = e is ColdcardException or InvalidOperationException ? e.Message : null;
+			// would not help, so those keep the generic wording. Prefer the short form where there is one:
+			// the status line truncates, so a long message loses the instruction at its end.
+			AuthorizationError = e switch
+			{
+				ColdcardException coldcard => coldcard.UserMessage ?? coldcard.Message,
+				InvalidOperationException => e.Message,
+				_ => null,
+			};
 			TrezorAuthorization = TrezorAuthorizationStatus.Failed;
 			return false;
 		}

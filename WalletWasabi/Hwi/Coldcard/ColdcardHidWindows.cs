@@ -53,7 +53,7 @@ internal sealed class ColdcardHidWindows : IColdcardHid
 		}
 
 		throw new InvalidOperationException(serialNumber is null
-			? "No Coldcard found. Connect and unlock the device."
+			? "Connect and unlock your Coldcard"
 			: $"Coldcard with serial '{serialNumber}' not found.");
 	}
 
