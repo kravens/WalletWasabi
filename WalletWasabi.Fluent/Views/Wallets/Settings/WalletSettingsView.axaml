@@ -23,7 +23,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="Coinjoin" IsVisible="{Binding !IsWatchOnly}">
+      <TabItem Header="Coinjoin" IsVisible="{Binding IsCoinJoinSettingsVisible}">
         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
           <v:WalletCoinJoinSettingsView DataContext="{Binding WalletCoinJoinSettings}" />
         </ScrollViewer>

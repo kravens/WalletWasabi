@@ -11,6 +11,7 @@ using WalletWasabi.Fluent.Helpers;
 using WalletWasabi.Fluent.Infrastructure;
 using WalletWasabi.Fluent.Models.Transactions;
 using WalletWasabi.Fluent.ViewModels.Wallets.Labels;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Services;
 using WalletWasabi.WabiSabi.Client.CoinJoin.Manager;
@@ -200,7 +201,12 @@ public partial class WalletModel : ReactiveObject, IWalletModel
 	public bool IsTrezorCoinJoinWallet => Wallet.KeyManager.IsTrezorCoinJoinWallet();
 
 	// A hardware wallet with a free taproot slot can opt into coinjoin later by adding a SLIP-25 account.
-	public bool CanEnableCoinjoin => Wallet.KeyManager.IsHardwareWallet && !IsTrezorCoinJoinWallet && Wallet.KeyManager.TaprootExtPubKey is null;
+	/// <summary>Offer to turn coinjoin on only for a hardware wallet that does not already have it. The
+	/// Trezor-shaped test asked whether a SLIP-25 account was present, which a Coldcard coinjoin wallet
+	/// never has — so Wasabi kept offering to enable coinjoin on wallets that were already coinjoining.</summary>
+	public bool CanEnableCoinjoin => Wallet.KeyManager.IsHardwareWallet
+		&& !Wallet.KeyManager.IsHardwareCoinJoinWallet()
+		&& Wallet.KeyManager.TaprootExtPubKey is null;
 
 	public async Task EnableCoinjoinAsync(CancellationToken cancellationToken) =>
 		await WalletWasabi.Helpers.HardwareWalletOperationHelpers.EnableCoinJoinAsync(Wallet.KeyManager, Wallet.Network, cancellationToken);

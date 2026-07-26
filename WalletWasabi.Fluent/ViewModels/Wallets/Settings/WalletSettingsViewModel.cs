@@ -189,6 +189,14 @@ public partial class WalletSettingsViewModel : RoutableViewModel
 
     public bool IsHardwareWallet { get; }
     public bool IsWatchOnly { get; }
+
+    /// <summary>
+    /// Whether the coinjoin settings are worth showing. Every hardware wallet is watch-only — it holds no
+    /// secret — so gating this on that alone hid the tab from exactly the wallets that gained coinjoin
+    /// support, leaving the round budget, the fee-rate cap and the Coldcard policy limits reachable only by
+    /// editing the wallet file.
+    /// </summary>
+    public bool IsCoinJoinSettingsVisible => !IsWatchOnly || _wallet.Settings.IsHardwareCoinJoinWallet;
     public bool SeveralReceivingScriptTypes => _wallet.SeveralReceivingScriptTypes;
 
     public bool IsTrezorCoinJoinWallet => _wallet.IsTrezorCoinJoinWallet;
