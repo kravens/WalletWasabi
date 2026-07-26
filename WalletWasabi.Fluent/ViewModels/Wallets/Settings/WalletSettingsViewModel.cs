@@ -29,6 +29,7 @@ public partial class WalletSettingsViewModel : RoutableViewModel
 {
     private readonly IWalletModel _wallet;
     [AutoNotify] private bool _preferPsbtWorkflow;
+    [AutoNotify] private bool _coinJoinEnabled;
     [AutoNotify] private string _walletName;
     [AutoNotify] private int _selectedTab;
     [AutoNotify] private ScriptType _defaultReceiveScriptType;
@@ -42,6 +43,8 @@ public partial class WalletSettingsViewModel : RoutableViewModel
         _wallet = walletModel;
         _walletName = walletModel.Name;
         _preferPsbtWorkflow = walletModel.Settings.PreferPsbtWorkflow;
+        _coinJoinEnabled = walletModel.Settings.CoinJoinEnabled;
+        HasCoinJoinCapability = walletModel.Settings.HasCoinJoinCapability;
         _selectedTab = 0;
         IsHardwareWallet = walletModel.IsHardwareWallet;
         IsWatchOnly = walletModel.IsWatchOnlyWallet;
@@ -185,6 +188,14 @@ public partial class WalletSettingsViewModel : RoutableViewModel
                 walletModel.Settings.PreferPsbtWorkflow = value;
                 walletModel.Settings.Save();
             });
+
+        this.WhenAnyValue(x => x.CoinJoinEnabled)
+            .Skip(1)
+            .Subscribe(value =>
+            {
+                walletModel.Settings.CoinJoinEnabled = value;
+                walletModel.Settings.Save();
+            });
     }
 
     public bool IsHardwareWallet { get; }
@@ -222,6 +233,11 @@ public partial class WalletSettingsViewModel : RoutableViewModel
     public ICommand VerifyRecoveryWordsCommand { get; }
     public ICommand ResyncWalletCommand { get; }
     public bool CanEnableCoinjoin { get; }
+
+    /// <summary>Whether to offer the on/off switch at all — only for a wallet already set up to coinjoin.
+    /// A wallet that never opted in gets the Enable button instead, because turning it on the first time
+    /// needs the device.</summary>
+    public bool HasCoinJoinCapability { get; }
     public ICommand EnableCoinjoinCommand { get; }
 
     protected override void OnNavigatedTo(bool isInHistory, CompositeDisposable disposables)

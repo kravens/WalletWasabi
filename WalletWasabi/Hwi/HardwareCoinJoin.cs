@@ -36,6 +36,13 @@ public static class HardwareCoinJoin
 			return HardwareCoinJoinVendor.None;
 		}
 
+		// Coinjoin is opt-in on a hardware wallet, so an explicit opt-out has to win over everything
+		// below — including the SLIP-25 shape, which a Trezor keeps whether or not it is coinjoining.
+		if (keyManager.CoinJoinDisabled)
+		{
+			return HardwareCoinJoinVendor.None;
+		}
+
 		if (keyManager.CoinJoinVendor != HardwareCoinJoinVendor.None)
 		{
 			return keyManager.CoinJoinVendor;

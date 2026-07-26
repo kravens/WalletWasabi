@@ -234,6 +234,11 @@ public class KeyManager
 	/// account shape so wallets imported before this field keep working.</summary>
 	public HardwareCoinJoinVendor CoinJoinVendor { get; set; }
 
+	/// <summary>Turned off by the user after it was enabled. Coinjoin on a hardware wallet is opt-in, and
+	/// opting back out has to be said explicitly: CoinJoinVendor cannot express it, because None also means
+	/// "never set", and a Trezor is recognised by its SLIP-25 account whatever that field says.</summary>
+	public bool CoinJoinDisabled { get; set; }
+
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
 	public ScriptPubKeyType DefaultReceiveScriptType { get; set; } = ScriptPubKeyType.TaprootBIP86;
@@ -845,6 +850,7 @@ public class KeyManager
 			("ColdcardPeriodMinutes", Encode.Int(keyManager.ColdcardPeriodMinutes)),
 			("ColdcardActivePolicyHash", Encode.String(keyManager.ColdcardActivePolicyHash ?? "")),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
+			("CoinJoinDisabled", Encode.Bool(keyManager.CoinJoinDisabled)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
 			("ChangeScriptPubKeyType", Encode.PreferredScriptPubKeyType(keyManager.ChangeScriptPubKeyType)),
@@ -893,6 +899,7 @@ public class KeyManager
 				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
 				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
 					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),
+				CoinJoinDisabled = get.Optional("CoinJoinDisabled", Decode.Bool, false),
 				NonPrivateCoinIsolation = get.Optional("RedCoinIsolation", Decode.Bool, false),
 				DefaultReceiveScriptType = get.Optional("DefaultReceiveScriptType", Decode.ScriptPubKeyType, ScriptPubKeyType.TaprootBIP86),
 				ChangeScriptPubKeyType = get.Optional("ChangeScriptPubKeyType", Decode.PreferredScriptPubKeyType) ?? PreferredScriptPubKeyType.Unspecified.Instance,

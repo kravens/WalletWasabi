@@ -68,9 +68,16 @@
       </ComboBox>
     </DockPanel>
 
+    <!-- Turning coinjoin on the first time needs the device, so that stays a button. Once the wallet is set
+         up for it, switching it off and on again is just a setting, like the PSBT workflow above. -->
     <DockPanel IsVisible="{Binding CanEnableCoinjoin}" ToolTip.Tip="Adds a coinjoin account to this hardware wallet so it can take part in coinjoins. Confirm on the device; the wallet restarts afterwards.">
       <TextBlock Text="Coinjoin" />
       <Button Content="Enable coinjoin" Command="{Binding EnableCoinjoinCommand}" HorizontalAlignment="Right" />
+    </DockPanel>
+
+    <DockPanel IsVisible="{Binding HasCoinJoinCapability}" ToolTip.Tip="Whether this hardware wallet takes part in coinjoins. Switching it off leaves the wallet and its coins untouched — it only stops Wasabi asking the device to sign rounds, and hides the coinjoin controls.">
+      <TextBlock Text="Coinjoin" />
+      <ToggleSwitch IsChecked="{Binding CoinJoinEnabled}" />
     </DockPanel>
   </StackPanel>
 

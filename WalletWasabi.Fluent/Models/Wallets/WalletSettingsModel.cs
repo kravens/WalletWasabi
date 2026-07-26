@@ -102,6 +102,24 @@ public partial class WalletSettingsModel : ReactiveObject
 	/// them, so the settings that control those must be visible for all of them.</summary>
 	public bool IsHardwareCoinJoinWallet => _keyManager.IsHardwareCoinJoinWallet();
 
+	/// <summary>Whether this wallet is set up to coinjoin at all, ignoring whether it is currently switched
+	/// on. The switch has to key on this rather than on the live state, or turning coinjoin off would hide
+	/// the control that turns it back on.</summary>
+	public bool HasCoinJoinCapability => _keyManager.IsHardwareWallet
+		&& (_keyManager.CoinJoinVendor != HardwareCoinJoinVendor.None || _keyManager.IsTrezorCoinJoinWallet());
+
+	/// <summary>Coinjoin on a hardware wallet is opt-in; this is the opt-out, mirroring the PSBT workflow
+	/// switch beside it.</summary>
+	public bool CoinJoinEnabled
+	{
+		get => !_keyManager.CoinJoinDisabled;
+		set
+		{
+			_keyManager.CoinJoinDisabled = !value;
+			_isDirty = true;
+		}
+	}
+
 	/// <summary>Only a Coldcard enforces a self-transfer floor, so only it shows that setting.</summary>
 	public bool IsColdcardCoinJoinWallet => _keyManager.GetCoinJoinVendor() == HardwareCoinJoinVendor.Coldcard;
 

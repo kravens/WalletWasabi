@@ -12,6 +12,7 @@ using WalletWasabi.Fluent.Extensions;
 using WalletWasabi.Fluent.Infrastructure;
 using WalletWasabi.Fluent.Models.Transactions;
 using WalletWasabi.Fluent.Models.Wallets;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Fluent.ViewModels.Navigation;
 using WalletWasabi.Fluent.ViewModels.SearchBar.SearchItems;
@@ -120,7 +121,9 @@ public partial class WalletViewModel : RoutableViewModel, IWalletViewModel
 					 return isSelected && !WalletModel.IsCoinJoinEnabled && (isPointerOver || isMusicBoxFlyoutDisplayed);
 				 }
 
-				 var canCoinJoin = !WalletModel.IsWatchOnlyWallet || Wallet.KeyManager.IsTrezorCoinJoinWallet();
+				 // Every hardware wallet is watch-only, so asking that alone hides the music box from all of
+				 // them. Ask whether this wallet actually coinjoins, whoever signs for it.
+				 var canCoinJoin = !WalletModel.IsWatchOnlyWallet || Wallet.KeyManager.IsHardwareCoinJoinWallet();
 				 return (isSelected && !hasNoBalance && (!areAllCoinsPrivate || (isPointerOver || isMusicBoxFlyoutDisplayed))) && canCoinJoin;
 			 });
 
@@ -328,8 +331,9 @@ public partial class WalletViewModel : RoutableViewModel, IWalletViewModel
 	{
 		yield return new WalletBalanceTileViewModel(UiContext, WalletModel.Balances);
 
-		// A Trezor coinjoin wallet is watch-only but does coinjoin, so it still has a privacy progress to show.
-		if (!IsWatchOnly || WalletModel.IsTrezorCoinJoinWallet)
+		// A hardware coinjoin wallet is watch-only but does coinjoin, so it still has privacy progress to
+		// show. Keyed on the vendor-neutral test, or every signer other than Trezor loses the tile.
+		if (!IsWatchOnly || Wallet.KeyManager.IsHardwareCoinJoinWallet())
 		{
 			yield return new PrivacyControlTileViewModel(UiContext, WalletModel);
 		}
