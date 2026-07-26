@@ -1,11 +1,13 @@
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace WalletWasabi.Hwi.Coldcard;
 
 /// <summary>
 /// Minimal HID access to a Coldcard, without any external dependency. Coldcard speaks a raw HID
 /// protocol (no bridge daemon, unlike Trezor), so the transport is hand-rolled per platform:
-/// <see cref="ColdcardHidWindows"/> (hid.dll + SetupAPI), Linux hidraw and macOS IOKit follow.
+/// <see cref="ColdcardHidWindows"/> (hid.dll + SetupAPI), <see cref="ColdcardHidLinux"/> (hidraw) and
+/// <see cref="ColdcardHidMacOs"/> (IOKit).
 /// </summary>
 public interface IColdcardHid : IDisposable
 {
@@ -41,7 +43,12 @@ public static class ColdcardUsb
 			return ColdcardHidLinux.Open(serialNumber);
 		}
 
-		throw new PlatformNotSupportedException("The Coldcard HID transport is implemented for Windows and Linux; macOS (IOKit) is not written yet.");
+		if (OperatingSystem.IsMacOS())
+		{
+			return ColdcardHidMacOs.Open(serialNumber);
+		}
+
+		throw new PlatformNotSupportedException($"The Coldcard HID transport has no implementation for {RuntimeInformation.OSDescription}.");
 	}
 
 	/// <summary>Serial numbers of the connected Coldcards (empty when none are attached).</summary>
@@ -55,6 +62,11 @@ public static class ColdcardUsb
 		if (OperatingSystem.IsLinux())
 		{
 			return ColdcardHidLinux.Enumerate();
+		}
+
+		if (OperatingSystem.IsMacOS())
+		{
+			return ColdcardHidMacOs.Enumerate();
 		}
 
 		return [];
