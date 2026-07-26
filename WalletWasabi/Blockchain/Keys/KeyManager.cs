@@ -225,6 +225,16 @@ public class KeyManager
 	/// a compromised host can ignore.</summary>
 	public int ColdcardMinInputs { get; set; } = ColdcardHsmPolicy.DefaultMinInputs;
 
+	/// <summary>The signer's own minimum round size, whatever the vendor, or null when it has no such rule.
+	/// Lets the coinjoin flow check a coordinator can build rounds that big without knowing which device is
+	/// attached — the same shape as <c>IKeyChain.MinRoundInputs</c>, but readable before a key chain exists,
+	/// which is when authorization has to decide whether it is worth asking the user to approve anything.</summary>
+	public int? CoinJoinMinRoundInputs => this.GetCoinJoinVendor() switch
+	{
+		HardwareCoinJoinVendor.Coldcard => ColdcardMinInputs > 0 ? ColdcardMinInputs : null,
+		_ => null,
+	};
+
 	/// <summary>Hash of the HSM policy this wallet last installed and the user approved on the device.
 	/// Kept so a later session can ask the device what it is running and compare, which is the end-to-end
 	/// check that the limits being enforced are the ones that were agreed to. Stored rather than recomputed

@@ -139,6 +139,17 @@ public class ColdcardHsmPolicyTests
 			ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.Compose([Segwit, Taproot], new ColdcardHsmPolicy.ColdcardLimits())));
 	}
 
+	[Fact]
+	public void TurningTheInputFloorOffLeavesNothingForTheClientToCheck()
+	{
+		// 0 means "no device-side floor", and the coordinator-cap check keys on the same value. If it read
+		// 0 as a floor rather than as off, every coordinator would trivially satisfy it and the check would
+		// quietly do nothing - or worse, compare against a cap of 0 and refuse everything.
+		Assert.Null(ColdcardHsmPolicy.Compose([Segwit], new ColdcardHsmPolicy.ColdcardLimits(MinInputs: null))
+			is var json && JsonDocument.Parse(json).RootElement.GetProperty("rules")[0]
+				.TryGetProperty("min_inputs", out var present) ? present.GetInt32() : (int?)null);
+	}
+
 	[Theory]
 	[InlineData("4.1.9\nmk3\n")]                 // last Mk3 firmware: no min_pct_self_transfer, no newer build
 	[InlineData("Coldcard MK2 bootloader\n")]

@@ -231,6 +231,31 @@ public class CoinJoinManager : BackgroundService
 		if (walletToStart.KeyManager.IsHardwareCoinJoinWallet()
 			&& walletToStart.KeyChain is null or ColdcardKeyChain { RoundsExhausted: true })
 		{
+			// Before asking anyone to approve anything: if this coordinator cannot build rounds as large as
+			// the signer demands, every round it offers will be refused. Authorizing first would mean the
+			// user walks to the device, reads a policy, approves it, and only then finds out. The rounds
+			// already polled carry the cap, so check them - opportunistically, since the poll only runs
+			// while something awaits a round and the set can legitimately be empty here. CoinJoinClient
+			// still makes the authoritative check per round.
+			if (walletToStart.KeyManager.CoinJoinMinRoundInputs is { } deviceFloor)
+			{
+				var known = await _roundStatusProvider.GetCurrentRoundsAsync(cancellationToken).ConfigureAwait(false);
+				var largest = known.Count == 0
+					? (int?)null
+					: known.Max(r => r.CoinjoinState.Parameters.MaxInputCountByRound);
+
+				if (largest is { } cap && cap < deviceFloor)
+				{
+					Logger.LogWarning(FormatLog(
+						$"This coordinator builds rounds of at most {cap} inputs, but the signing device requires "
+						+ $"at least {deviceFloor}, so it would refuse every round. Lower the minimum input count "
+						+ "in the coinjoin settings, or use a coordinator that builds larger rounds.",
+						walletToStart));
+					NotifyCoinJoinStartError(walletToStart, CoinjoinError.MinInputCountTooLow);
+					return;
+				}
+			}
+
 			try
 			{
 				// Long enough for a person to actually read what they are approving. A Trezor asks for one
