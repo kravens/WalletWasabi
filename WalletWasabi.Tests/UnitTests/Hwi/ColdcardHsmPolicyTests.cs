@@ -51,20 +51,22 @@ public class ColdcardHsmPolicyTests
 	[Fact]
 	public void EveryDeviceSideLimitReachesThePolicy()
 	{
-		// All four are enforced by the device. If any silently failed to serialise, the limit would exist
+		// All five are enforced by the device. If any silently failed to serialise, the limit would exist
 		// only in the UI while the device enforced nothing.
 		var json = ColdcardHsmPolicy.Compose([Segwit], new ColdcardHsmPolicy.ColdcardLimits(
 			MinSelfTransferPercent: 97.5,
 			MaxSatsLeaving: 250_000,
 			MaxTransactions: 50,
 			MaxTransactionsPerPeriod: 4,
-			PeriodMinutes: 30));
+			PeriodMinutes: 30,
+			MinInputs: 21));
 
 		var rule = Rule(json);
 		Assert.Equal(97.5, rule.GetProperty("min_pct_self_transfer").GetDouble());
 		Assert.Equal(250_000, rule.GetProperty("max_sats_leaving").GetInt64());
 		Assert.Equal(50, rule.GetProperty("max_txn").GetInt32());
 		Assert.Equal(4, rule.GetProperty("max_txn_per_period").GetInt32());
+		Assert.Equal(21, rule.GetProperty("min_inputs").GetInt32());
 
 		// The device refuses a policy that measures something per period without defining one.
 		using var doc = JsonDocument.Parse(json);
@@ -80,16 +82,61 @@ public class ColdcardHsmPolicyTests
 			MinSelfTransferPercent: ColdcardHsmPolicy.FloorWithoutAbsoluteCap,
 			MaxSatsLeaving: null,
 			MaxTransactions: null,
-			MaxTransactionsPerPeriod: null));
+			MaxTransactionsPerPeriod: null,
+			MinInputs: null));
 
 		var rule = Rule(json);
 		Assert.Equal(99.0, rule.GetProperty("min_pct_self_transfer").GetDouble());
 		Assert.False(rule.TryGetProperty("max_sats_leaving", out _));
 		Assert.False(rule.TryGetProperty("max_txn", out _));
 		Assert.False(rule.TryGetProperty("max_txn_per_period", out _));
+		Assert.False(rule.TryGetProperty("min_inputs", out _));
 
 		using var doc = JsonDocument.Parse(json);
 		Assert.False(doc.RootElement.TryGetProperty("period", out _));
+	}
+
+	[Fact]
+	public void TheFingerprintChangesWithEveryLimit()
+	{
+		// The drift guard rests entirely on this: it is what tells a later session that the settings were
+		// edited while the device stayed locked into the previous policy. A limit the fingerprint ignores
+		// is a limit a user can tighten, be shown as active, and not actually get.
+		var baseline = new ColdcardHsmPolicy.ColdcardLimits();
+		var reference = Fingerprint(baseline);
+
+		Assert.NotEqual(reference, Fingerprint(baseline with { MinSelfTransferPercent = 96.0 }));
+		Assert.NotEqual(reference, Fingerprint(baseline with { MaxSatsLeaving = 50_000 }));
+		Assert.NotEqual(reference, Fingerprint(baseline with { MaxTransactions = 10 }));
+		Assert.NotEqual(reference, Fingerprint(baseline with { MaxTransactionsPerPeriod = 3 }));
+		Assert.NotEqual(reference, Fingerprint(baseline with { PeriodMinutes = 120 }));
+		Assert.NotEqual(reference, Fingerprint(baseline with { MinInputs = 50 }));
+
+		// Turning a limit off has to register too, or disabling one would go unnoticed.
+		Assert.NotEqual(reference, Fingerprint(baseline with { MinInputs = null }));
+
+		static string Fingerprint(ColdcardHsmPolicy.ColdcardLimits limits) =>
+			ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.Compose([Segwit], limits));
+	}
+
+	[Fact]
+	public void TheFingerprintIsStableForUnchangedSettings()
+	{
+		// The other half: if it moved on its own, the guard would cry wolf on a policy that never changed
+		// and send the user off to reboot a device enforcing exactly what they asked for.
+		Assert.Equal(
+			ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.Compose([Segwit, Taproot], new ColdcardHsmPolicy.ColdcardLimits())),
+			ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.Compose([Segwit, Taproot], new ColdcardHsmPolicy.ColdcardLimits())));
+	}
+
+	[Fact]
+	public void TheAccountPathsAreCoveredToo()
+	{
+		// A wallet whose taproot account appeared or vanished is running a different policy, since the
+		// paths ownership proofs are allowed for came with it.
+		Assert.NotEqual(
+			ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.Compose([Segwit], new ColdcardHsmPolicy.ColdcardLimits())),
+			ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.Compose([Segwit, Taproot], new ColdcardHsmPolicy.ColdcardLimits())));
 	}
 
 	[Theory]
