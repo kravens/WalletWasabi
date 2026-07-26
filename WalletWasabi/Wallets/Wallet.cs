@@ -214,9 +214,15 @@ public class Wallet : BackgroundService
 			// Fail early with a clear message if this device's firmware can't run the policy (Mk3/older, Q).
 			ColdcardHsmPolicy.EnsureFirmwareSupportsPolicy(device.GetVersion());
 
+			// Remember which policy the device ended up running. HSM mode outlives this process, so on the
+			// next start that recorded hash is what tells us the device is still enforcing what was agreed
+			// to rather than something else.
+			string? activeHash;
 			try
 			{
-				await Task.Run(() => device.StartHsm(policyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
+				activeHash = await Task.Run(
+					() => device.StartHsm(policyJson, KeyManager.ColdcardActivePolicyHash, cancellationToken),
+					cancellationToken).ConfigureAwait(false);
 			}
 			catch (ColdcardException e) when (e.Message.Contains("Unknown item", StringComparison.Ordinal))
 			{
@@ -239,7 +245,15 @@ public class Wallet : BackgroundService
 					MaxTransactions: null,
 					MaxTransactionsPerPeriod: null);
 				var legacyJson = ColdcardHsmPolicy.Compose(accountPaths, legacy);
-				await Task.Run(() => device.StartHsm(legacyJson, cancellationToken), cancellationToken).ConfigureAwait(false);
+				activeHash = await Task.Run(
+					() => device.StartHsm(legacyJson, KeyManager.ColdcardActivePolicyHash, cancellationToken),
+					cancellationToken).ConfigureAwait(false);
+			}
+
+			if (activeHash is { Length: > 0 } && activeHash != KeyManager.ColdcardActivePolicyHash)
+			{
+				KeyManager.ColdcardActivePolicyHash = activeHash;
+				KeyManager.ToFile();
 			}
 
 			KeyChain = new ColdcardKeyChain(device, KeyManager, TransactionStore, maxRounds);

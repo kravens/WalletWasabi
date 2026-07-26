@@ -190,7 +190,13 @@ public sealed class ColdcardDevice : IDisposable
 	/// Installs an HSM policy (JSON) and enters HSM mode. The user reviews and approves the policy on the
 	/// device; afterwards coinjoin PSBTs and ownership proofs are signed unattended within the policy.
 	/// </summary>
-	public void StartHsm(string policyJson, CancellationToken cancellationToken)
+	/// <param name="previouslyApprovedHash">The policy hash this wallet recorded the last time a policy was
+	/// approved, if any. HSM mode survives a restart of this program but the in-memory record does not, so
+	/// without it every reconnect would look like somebody else's policy.</param>
+	/// <returns>The hash of the policy now active, when this wallet approved it — freshly, or previously and
+	/// matched here. Null when the device is running something else, so a policy nobody agreed to never gets
+	/// recorded as the approved one.</returns>
+	public string? StartHsm(string policyJson, string? previouslyApprovedHash, CancellationToken cancellationToken)
 	{
 		lock (_gate)
 		{
@@ -200,9 +206,11 @@ public sealed class ColdcardDevice : IDisposable
 			{
 				// HSM mode is a one-way trip until reboot, so a policy is already running. If it is the one
 				// we installed, this is just a re-authorization and there is nothing to do.
-				if (_installedPolicyHash is { } ours && ours == current.PolicyHash)
+				var approved = _installedPolicyHash ?? previouslyApprovedHash;
+				if (approved is not null && approved == current.PolicyHash)
 				{
-					return;
+					Logger.LogInfo($"The Coldcard is running the policy this wallet approved (hash {approved}).");
+					return current.PolicyHash;
 				}
 
 				// Otherwise the device is enforcing a policy nobody here installed - typically one the user
@@ -211,10 +219,15 @@ public sealed class ColdcardDevice : IDisposable
 				// Refusing would break the legitimate "set the policy on the device first" workflow, so this
 				// warns and continues; the device policy still bounds what can be signed either way.
 				Logger.LogWarning(
-					"The Coldcard is already in HSM mode under a policy this session did not install "
-					+ $"(policy hash {current.PolicyHash ?? "unknown"}). The limits it enforces may differ from "
-					+ "the ones configured here. Reboot the Coldcard and authorize again to apply these limits.");
-				return;
+					"The Coldcard is already in HSM mode under a policy this wallet did not approve "
+					+ $"(device reports hash {current.PolicyHash ?? "unknown"}"
+					+ (previouslyApprovedHash is null ? "" : $", expected {previouslyApprovedHash}")
+					+ "). The limits it enforces are not the ones configured here. Reboot the Coldcard and "
+					+ "authorize again to apply these limits.");
+
+				// Null, not the hash: nobody approved this policy through this wallet, and recording it would
+				// turn a stranger's policy into the one we vouch for on the next connection.
+				return null;
 			}
 
 			var data = Encoding.UTF8.GetBytes(policyJson);
@@ -243,7 +256,13 @@ public sealed class ColdcardDevice : IDisposable
 					// Remember which policy this is, so a later re-authorization can tell our own policy
 					// apart from one that was already running when we arrived.
 					_installedPolicyHash = status.PolicyHash;
-					return;
+					Logger.LogInfo($"The Coldcard accepted the coinjoin policy (hash {status.PolicyHash}).");
+					if (status.Summary is { Length: > 0 } summary)
+					{
+						Logger.LogInfo($"Policy the device will enforce:{Environment.NewLine}{summary}");
+					}
+
+					return status.PolicyHash;
 				}
 				if (!status.ApprovalWait)
 				{
@@ -259,8 +278,10 @@ public sealed class ColdcardDevice : IDisposable
 	}
 
 	/// <summary>The device's HSM state ('hsts' command): whether a policy is active, whether one is
-	/// currently on screen waiting for the user's approval, and the hash identifying the running policy.</summary>
-	public (bool Active, bool ApprovalWait, string? PolicyHash) GetHsmStatus()
+	/// currently on screen waiting for the user's approval, the hash identifying the running policy, and
+	/// the device's own plain-language rendering of it — the same words it printed on its screen, which is
+	/// what lets someone confirm the limits being enforced are the limits they chose.</summary>
+	public (bool Active, bool ApprovalWait, string? PolicyHash, string? Summary) GetHsmStatus()
 	{
 		lock (_gate)
 		{
@@ -283,7 +304,11 @@ public sealed class ColdcardDevice : IDisposable
 			return (
 				status.RootElement.TryGetProperty("active", out var active) && active.GetBoolean(),
 				status.RootElement.TryGetProperty("approval_wait", out var wait) && wait.GetBoolean(),
-				status.RootElement.TryGetProperty("policy_hash", out var hash) ? hash.GetString() : null);
+				status.RootElement.TryGetProperty("policy_hash", out var hash) ? hash.GetString() : null,
+				// Absent when the policy sets priv_over_ux, which suppresses it deliberately.
+				status.RootElement.TryGetProperty("summary", out var summary) && summary.ValueKind == JsonValueKind.String
+					? summary.GetString()
+					: null);
 		}
 	}
 

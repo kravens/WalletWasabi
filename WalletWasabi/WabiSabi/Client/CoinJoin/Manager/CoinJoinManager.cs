@@ -233,8 +233,13 @@ public class CoinJoinManager : BackgroundService
 		{
 			try
 			{
+				// Long enough for a person to actually read what they are approving. A Trezor asks for one
+				// hold-to-confirm, but a Coldcard prints the whole HSM policy over several screens and then
+				// wants an anti-fat-finger digit; three minutes cancelled that mid-read on hardware, and the
+				// device-side deadline never got a chance to matter. Nothing is spent while this waits: it
+				// only ends in the device approving, the device refusing, or the user walking away.
 				using var authCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-				authCts.CancelAfter(TimeSpan.FromMinutes(3));
+				authCts.CancelAfter(TimeSpan.FromMinutes(12));
 				await walletToStart.AuthorizeHardwareCoinJoinAsync(
 					_coinJoinConfiguration.CoordinatorIdentifier,
 					walletToStart.KeyManager.TrezorCoinjoinMaxRounds,
@@ -243,7 +248,8 @@ public class CoinJoinManager : BackgroundService
 			}
 			catch (Exception ex)
 			{
-				Logger.LogWarning(FormatLog($"Trezor coinjoin authorization failed: {ex.Message}", walletToStart));
+				var vendor = walletToStart.KeyManager.GetCoinJoinVendor();
+				Logger.LogWarning(FormatLog($"{vendor} coinjoin authorization failed: {ex.Message}", walletToStart));
 				NotifyCoinJoinStartError(walletToStart, CoinjoinError.TrezorAuthorizationFailed);
 				return;
 			}

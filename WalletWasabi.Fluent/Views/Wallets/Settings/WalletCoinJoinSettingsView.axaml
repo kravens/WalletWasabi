@@ -127,5 +127,24 @@
       <TextBlock Text="Max transactions per hour" />
       <TextBox Classes="standalone" Text="{Binding ColdcardMaxTxnPerPeriod}" DockPanel.Dock="Right" Watermark="6" MaxLength="3" />
     </DockPanel>
+
+    <!--
+      What the device reports it is enforcing, in its own words, next to the settings above. The device
+      is what actually refuses a transaction, so its account of the rules is the one that counts; the
+      hash is there to be compared with the one shown on the Coldcard screen when the policy was approved.
+      Hidden until a policy has been accepted.
+    -->
+    <StackPanel IsVisible="{Binding DevicePolicySummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                Spacing="4" Margin="0,10,0,0">
+      <Separator />
+      <TextBlock Text="Policy active on the device" FontWeight="Bold" />
+      <TextBlock Text="{Binding DevicePolicySummary}" TextWrapping="Wrap" Opacity="0.75"
+                 FontFamily="{StaticResource MonospacedFont}" FontSize="11" />
+      <DockPanel ToolTip.Tip="The Coldcard showed this hash when it accepted the policy. If it matches, the device is enforcing exactly the policy that was sent to it.">
+        <TextBlock Text="Policy hash" />
+        <SelectableTextBlock Text="{Binding DevicePolicyHash}" DockPanel.Dock="Right"
+                             TextWrapping="Wrap" Opacity="0.75" FontSize="11" />
+      </DockPanel>
+    </StackPanel>
   </StackPanel>
 </UserControl>

@@ -43,6 +43,14 @@ public partial class WalletCoinjoinModel : ReactiveObject
 	/// plugged in, firmware too old — and "press Play to retry" is a dead end for all of them.</summary>
 	[AutoNotify] private string? _authorizationError;
 
+	/// <summary>The policy the Coldcard is actually enforcing, in the device's own words, and the hash
+	/// identifying it. Read back from the device after it accepts a policy so the limits on screen can be
+	/// compared with the ones configured here — the device is the thing doing the enforcing, so its account
+	/// of the rules is the one that counts.</summary>
+	[AutoNotify] private string? _devicePolicySummary;
+
+	[AutoNotify] private string? _devicePolicyHash;
+
 	public WalletCoinjoinModel(IServices services, Wallet wallet, CoinJoinManager coinjoinManager, WalletSettingsModel settings)
 	{
 		_services = services;
@@ -125,6 +133,7 @@ public partial class WalletCoinjoinModel : ReactiveObject
 				new FeeRate(_wallet.KeyManager.TrezorCoinjoinMaxMiningFeeRate),
 				CancellationToken.None);
 			TrezorAuthorization = TrezorAuthorizationStatus.Confirmed;
+			ReadDevicePolicy();
 			return true;
 		}
 		catch (TrezorBridgeNotFoundException e)
@@ -149,6 +158,27 @@ public partial class WalletCoinjoinModel : ReactiveObject
 			AuthorizationError = e is ColdcardException or InvalidOperationException ? e.Message : null;
 			TrezorAuthorization = TrezorAuthorizationStatus.Failed;
 			return false;
+		}
+	}
+
+	/// <summary>Asks the device what policy it ended up with. Best-effort and non-fatal: this is here so a
+	/// user can check the limits, and failing to read them must not undo an authorization that succeeded.</summary>
+	private void ReadDevicePolicy()
+	{
+		if (_wallet.KeyChain is not ColdcardKeyChain coldcard)
+		{
+			return;
+		}
+
+		try
+		{
+			var status = coldcard.Device.GetHsmStatus();
+			DevicePolicySummary = status.Summary;
+			DevicePolicyHash = status.PolicyHash;
+		}
+		catch (Exception e)
+		{
+			Logger.LogDebug($"Could not read the Coldcard's active policy: {e.Message}");
 		}
 	}
 

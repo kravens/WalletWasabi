@@ -40,6 +40,8 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _coldcardMinSelfTransfer;
 	[AutoNotify] private string _coldcardMaxSatsLeaving;
 	[AutoNotify] private string _coldcardMaxTxnPerPeriod;
+	[AutoNotify] private string? _devicePolicySummary;
+	[AutoNotify] private string? _devicePolicyHash;
 	[AutoNotify] private bool _isOutputWalletSelectionEnabled = true;
 	[AutoNotify] private IWalletModel _selectedOutputWallet;
 	[AutoNotify] private ReadOnlyObservableCollection<IWalletModel> _wallets = ReadOnlyObservableCollection<IWalletModel>.Empty;
@@ -59,6 +61,16 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_trezorMaxRounds = _wallet.Settings.TrezorCoinjoinMaxRounds.ToString();
 		_trezorMaxMiningFeeRate = _wallet.Settings.TrezorCoinjoinMaxMiningFeeRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		IsColdcardCoinJoinWallet = _wallet.Settings.IsColdcardCoinJoinWallet;
+
+		// What the device says it is enforcing, as opposed to what is configured above. Only populated
+		// once a policy has been accepted, so it stays hidden until there is something real to show.
+		if (_wallet.Coinjoin is { } coinjoin)
+		{
+			coinjoin.WhenAnyValue(x => x.DevicePolicySummary)
+				.BindTo(this, x => x.DevicePolicySummary);
+			coinjoin.WhenAnyValue(x => x.DevicePolicyHash)
+				.BindTo(this, x => x.DevicePolicyHash);
+		}
 		_coldcardMinSelfTransfer = _wallet.Settings.ColdcardMinSelfTransferPercent.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMaxSatsLeaving = _wallet.Settings.ColdcardMaxSatsLeaving.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMaxTxnPerPeriod = _wallet.Settings.ColdcardMaxTransactionsPerPeriod.ToString(System.Globalization.CultureInfo.InvariantCulture);

@@ -220,6 +220,13 @@ public class KeyManager
 	public int ColdcardMaxTransactionsPerPeriod { get; set; } = ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod;
 	public int ColdcardPeriodMinutes { get; set; } = ColdcardHsmPolicy.DefaultPeriodMinutes;
 
+	/// <summary>Hash of the HSM policy this wallet last installed and the user approved on the device.
+	/// Kept so a later session can ask the device what it is running and compare, which is the end-to-end
+	/// check that the limits being enforced are the ones that were agreed to. Stored rather than recomputed
+	/// because reproducing the device's canonical JSON byte-for-byte would couple us to its field order,
+	/// and a drift there would cry wolf on a perfectly good policy.</summary>
+	public string? ColdcardActivePolicyHash { get; set; }
+
 	/// <summary>Which hardware vendor signs this wallet's coinjoins. Vendors that keep coinjoin funds in the
 	/// wallet's default accounts (Coldcard, and the Krux/Passport work to come) cannot be recognised from a
 	/// key path the way a Trezor's SLIP-25 account can, so the vendor is recorded explicitly at import.
@@ -836,6 +843,7 @@ public class KeyManager
 			("ColdcardMaxSatsLeaving", Encode.Int((int)keyManager.ColdcardMaxSatsLeaving)),
 			("ColdcardMaxTransactionsPerPeriod", Encode.Int(keyManager.ColdcardMaxTransactionsPerPeriod)),
 			("ColdcardPeriodMinutes", Encode.Int(keyManager.ColdcardPeriodMinutes)),
+			("ColdcardActivePolicyHash", Encode.String(keyManager.ColdcardActivePolicyHash ?? "")),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
@@ -881,6 +889,7 @@ public class KeyManager
 				ColdcardMaxSatsLeaving = get.Optional("ColdcardMaxSatsLeaving", Decode.Int, (int)ColdcardHsmPolicy.DefaultMaxSatsLeaving),
 				ColdcardMaxTransactionsPerPeriod = get.Optional("ColdcardMaxTransactionsPerPeriod", Decode.Int, ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod),
 				ColdcardPeriodMinutes = get.Optional("ColdcardPeriodMinutes", Decode.Int, ColdcardHsmPolicy.DefaultPeriodMinutes),
+				ColdcardActivePolicyHash = get.Optional("ColdcardActivePolicyHash", Decode.String) is { Length: > 0 } h ? h : null,
 				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
 				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
 					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),
