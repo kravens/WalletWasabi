@@ -160,6 +160,10 @@ public partial class WalletCoinjoinModel : ReactiveObject
 			{
 				ColdcardException coldcard => coldcard.UserMessage ?? coldcard.Message,
 				InvalidOperationException => e.Message,
+				// Running on a platform with no transport for this device. Falling through to "press Play
+				// to retry" sends the user round a loop that can never succeed - observed on macOS, where
+				// the real reason sat in the log while the screen said nothing useful.
+				PlatformNotSupportedException => "Not supported on this operating system",
 				_ => null,
 			};
 			TrezorAuthorization = TrezorAuthorizationStatus.Failed;
