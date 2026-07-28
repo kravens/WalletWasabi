@@ -58,7 +58,9 @@ internal sealed class ColdcardHidLinux : IColdcardHid
 		}
 
 		throw new InvalidOperationException(serialNumber is null
-			? "Connect and unlock your Coldcard"
+			// A switched-off USB port looks exactly like an unplugged device from here, and on a Mk4 it is
+			// a setting rather than a fault, so name both rather than sending the user to check the cable.
+			? "Connect your Coldcard, USB enabled"
 			: $"Coldcard with serial '{serialNumber}' not found.");
 	}
 

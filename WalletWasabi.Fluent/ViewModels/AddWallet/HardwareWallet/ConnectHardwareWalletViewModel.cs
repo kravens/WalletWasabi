@@ -44,6 +44,10 @@ public partial class ConnectHardwareWalletViewModel : RoutableViewModel
 
 	private HwiEnumerateEntry? DetectedDevice { get; set; }
 
+	/// <summary>Shown only for a Coldcard: the two device settings coinjoin needs, which ship off.
+	/// Null for every other vendor, so the hint never appears where it would be nonsense.</summary>
+	[AutoNotify] private string? _coldcardCoinJoinHint;
+
 	public CancellationTokenSource CancelCts { get; set; }
 
 	private AbandonedTasks AbandonedTasks { get; }
@@ -92,6 +96,7 @@ public partial class ConnectHardwareWalletViewModel : RoutableViewModel
 		}
 
 		DetectedDevice = null;
+		ColdcardCoinJoinHint = null;
 		ExistingWalletFound = false;
 		AbandonedTasks.AddAndClearCompleted(DetectionAsync(CancelCts.Token));
 	}
@@ -171,6 +176,18 @@ public partial class ConnectHardwareWalletViewModel : RoutableViewModel
 		{
 			Message = "Enter your PIN on your device.";
 			return;
+		}
+
+		// A factory-fresh Coldcard ships with the HSM commands coinjoin needs switched off, and finds out
+		// by failing an authorization several screens later. Say it here, while the device is in hand and
+		// the menu is a few presses away. Model-gated, so no other vendor is told to go looking for a
+		// setting it does not have.
+		if (device.Model == HardwareWalletModels.Coldcard)
+		{
+			ColdcardCoinJoinHint =
+				"To coinjoin with this Coldcard, enable USB under Settings > Hardware On/Off, and HSM Mode "
+				+ "under Settings > Advanced/Tools > Spending Policy. Both are off on a new device. Neither "
+				+ "is needed for ordinary use.";
 		}
 
 		DetectedDevice = device;
