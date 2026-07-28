@@ -344,7 +344,8 @@ public sealed class ColdcardDevice : IDisposable
 				// device ships with the setting off, so say where to turn it on instead of echoing the device.
 				throw new ColdcardException(
 					"HSM commands are disabled on this Coldcard. Enable them on the device at "
-					+ "Settings > Advanced/Tools > Spending Policy > HSM Mode > Enable, then try again.");
+					+ "Settings > Advanced/Tools > Spending Policy > HSM Mode > Enable, then try again.",
+					"Enable HSM Mode on the Coldcard");
 			}
 
 			using var status = JsonDocument.Parse(payload);
