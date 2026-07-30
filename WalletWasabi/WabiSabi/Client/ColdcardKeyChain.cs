@@ -127,8 +127,11 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 			.Select(input => input.PrevOut)
 			.ToHashSet();
 
-		// Bounded, so a wedged device can't hold the signing lock forever.
-		using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+		// Bounded, so a wedged device can't hold the signing lock forever. Two minutes was enough for
+		// regtest and not for mainnet: a real round's PSBT is far larger, and the parent transactions
+		// attached for amount verification larger still, so the device legitimately needs longer than
+		// that. Observed signing successfully while Wasabi had already given up on it.
+		using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(6));
 		var signedBytes = _device.SignPsbt(psbt.ToBytes(), timeout.Token);
 		var signedPsbt = PSBT.Load(signedBytes, network);
 

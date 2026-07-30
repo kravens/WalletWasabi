@@ -451,7 +451,17 @@ public sealed class ColdcardDevice : IDisposable
 		while (true)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			var (tag, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("stok"));
+
+			// Generous read timeout, not the 15s default. A Coldcard deep in signing stops servicing USB
+			// reads, so a poll can go unanswered for a long time while nothing at all is wrong. On a real
+			// mainnet round the device went quiet for over a minute — a coinjoin has many participants and
+			// AddPrevTxs hands it the full parent transactions to verify our amounts against — and the
+			// default timeout turned that into a fatal IOException after the device had already signed.
+			// Regtest never showed it: those PSBTs are small enough to answer every poll.
+			//
+			// The real deadline is cancellationToken. This only stops a busy device being mistaken for a
+			// dead one; a genuinely wedged device still ends the wait, just at the caller's budget.
+			var (tag, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("stok"), timeoutMs: 120_000);
 			if (tag == "strx") // done: <I32s> length + sha
 			{
 				if (payload.Length < 36)
