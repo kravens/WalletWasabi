@@ -614,6 +614,12 @@ public class CoinJoinClient
 				var delay = scheduledDate - DateTimeOffset.UtcNow;
 				if (delay > TimeSpan.Zero)
 				{
+					// Scheduling the request at a random point in the signing phase hides timing from the
+					// coordinator, and assumes signing itself is free. On a hardware signer it is not: a Coldcard
+					// takes around two minutes on a mainnet coinjoin, and this wait comes out of the same phase.
+					// Logged so both costs are visible together.
+					Logger.LogInfo($"Waiting {delay.TotalSeconds:F1}s before asking the signer; "
+						+ $"{(signingEndTime - DateTimeOffset.UtcNow).TotalSeconds:F1}s left in the signing phase.");
 					await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
 				}
 				try
