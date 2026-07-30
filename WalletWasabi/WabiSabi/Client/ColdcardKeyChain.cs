@@ -3,10 +3,10 @@ using System.Linq;
 using System.Threading;
 using NBitcoin;
 using WalletWasabi.Blockchain.Keys;
-using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Crypto;
 using WalletWasabi.Extensions;
 using WalletWasabi.Hwi.Coldcard;
+using WalletWasabi.Logging;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.WabiSabi.Models.MultipartyTransaction;
 
@@ -20,7 +20,7 @@ namespace WalletWasabi.WabiSabi.Client;
 /// </summary>
 public class ColdcardKeyChain : IKeyChain, IDisposable
 {
-	public ColdcardKeyChain(ColdcardDevice device, KeyManager keyManager, ITransactionStore transactionStore, int maxRounds)
+	public ColdcardKeyChain(ColdcardDevice device, KeyManager keyManager, int maxRounds)
 	{
 		if (!keyManager.IsHardwareWallet)
 		{
@@ -29,13 +29,11 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 
 		_device = device;
 		_keyManager = keyManager;
-		_transactionStore = transactionStore;
 		_maxRounds = maxRounds;
 	}
 
 	private readonly ColdcardDevice _device;
 	private readonly KeyManager _keyManager;
-	private readonly ITransactionStore _transactionStore;
 	private readonly int _maxRounds;
 	private int _roundsSigned;
 	private readonly object _signingLock = new();
@@ -116,11 +114,24 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		}
 		psbt.AddKeyPaths(_keyManager);
 
-		// The device's HSM checks (fee limit, self-transfer floor) run on the input amounts the host
-		// claims in witness_utxo. Give it the full previous transactions of our inputs so it verifies our
-		// amounts instead of trusting them (closes the segwit v0 fee-overpayment shape for unattended
-		// signing). Foreign prev txs are unknown here and not needed — we don't sign those inputs.
-		psbt.AddPrevTxs(_transactionStore);
+		// Deliberately no AddPrevTxs. It was here so the device could verify our claimed input amounts
+		// rather than trust witness_utxo, but the protection is redundant for this flow and the cost is
+		// not: each parent transaction is uploaded, parsed and hashed on the device, and on mainnet that
+		// pushed signing past the coordinator's signing phase, losing rounds the device would otherwise
+		// have signed.
+		//
+		// Redundant because BIP-143 commits each signature to the amount of the input it signs. A host
+		// that lies about one of our amounts gets a signature that is invalid for the real UTXO, so the
+		// transaction cannot confirm. There is no multi-session gap to exploit either: every one of our
+		// inputs is signed in this single pass, which is the shape the segwit fee attack needed. P2TR is
+		// stronger still, committing to all input amounts at once.
+		//
+		// What a lie can still do is flatter the policy evaluation - own_in_value comes from the same
+		// claimed amounts - so the device might approve a transaction it should have refused. That
+		// transaction is unusable, because the signature over the lied-about input is invalid. The cost
+		// of that is a wasted round and one of max_txn, not funds.
+		//
+		// Foreign input amounts never enter the policy: it sums only inputs with num_our_keys.
 
 		var ourOutpoints = transaction.Inputs.AsIndexedInputs()
 			.Where(input => _keyManager.TryGetKeyPath(spentOutputs[(int)input.Index].ScriptPubKey) is not null)
@@ -132,7 +143,16 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		// attached for amount verification larger still, so the device legitimately needs longer than
 		// that. Observed signing successfully while Wasabi had already given up on it.
 		using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(6));
-		var signedBytes = _device.SignPsbt(psbt.ToBytes(), timeout.Token);
+
+		// Timed and logged: the coordinator's signing phase is the real deadline, not this budget, and it
+		// is not ours to set. Knowing how long the device actually takes against the PSBT size is what
+		// tells us whether unattended signing is viable at live round sizes at all.
+		var psbtBytes = psbt.ToBytes();
+		var started = DateTimeOffset.UtcNow;
+		var signedBytes = _device.SignPsbt(psbtBytes, timeout.Token);
+		Logger.LogInfo(
+			$"Coldcard signed {ourOutpoints.Count} input(s) of a {psbtBytes.Length:N0}-byte PSBT in "
+			+ $"{(DateTimeOffset.UtcNow - started).TotalSeconds:F1}s.");
 		var signedPsbt = PSBT.Load(signedBytes, network);
 
 		// Only our inputs can finalize; the foreign ones are witness-utxo-only and unsigned, so a full

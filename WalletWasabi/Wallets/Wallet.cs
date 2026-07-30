@@ -262,7 +262,7 @@ public class Wallet : BackgroundService
 				KeyManager.ToFile();
 			}
 
-			KeyChain = new ColdcardKeyChain(device, KeyManager, TransactionStore, maxRounds);
+			KeyChain = new ColdcardKeyChain(device, KeyManager, maxRounds);
 		}
 		catch
 		{
