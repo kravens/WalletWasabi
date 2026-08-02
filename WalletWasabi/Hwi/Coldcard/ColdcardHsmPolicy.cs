@@ -15,13 +15,20 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </summary>
 public static class ColdcardHsmPolicy
 {
-	/// <summary>The share of our own input value that must come back to us. On its own a ratio is the
-	/// wrong shape for this job: what it permits scales with the amount being mixed, while mining fees
-	/// scale the other way — a large share of a small coin, a trivial share of a big one. A percentage
-	/// tight enough to protect large amounts therefore refuses ordinary rounds on small ones, which is
-	/// what 99% did on hardware (legitimate rounds landing at 96.7–98.9%). It is safe to relax to 95%
-	/// only because <see cref="DefaultMaxSatsLeaving"/> bounds the absolute loss alongside it.</summary>
-	public const double DefaultMinSelfTransferPercent = 95.0;
+	/// <summary>The share of our own input value that must come back to us. No longer the working limit:
+	/// <c>max_fee_per_kvbyte</c> is, because a ratio is the wrong shape for pricing a round. What a ratio
+	/// permits scales with the amount being mixed, while mining fees scale the other way — a large share
+	/// of a small coin, a trivial share of a big one — so the threshold where it starts refusing honest
+	/// rounds moves with the network. At 5 sat/vByte a 95% floor refuses any coin under roughly 13k sats;
+	/// at 50 sat/vByte it refuses anything under roughly 130k. That is what produced the 91.55%, 90.05%
+	/// and 76.21% refusals observed on hardware. A feerate limit has no such term.
+	///
+	/// It is kept, at 50%, as the one guard that knows how much is at stake. The other two do not: a big
+	/// byte count legitimately buys a big absolute loss, so a wallet made of many small coins can be bled
+	/// a round at a time while every round is honestly priced per byte. 50% never touches a real round and
+	/// still refuses catastrophe, which is the whole job it has left. Not user-configurable — a limit that
+	/// only ever fires on disaster is not a dial anyone should be turning.</summary>
+	public const double DefaultMinSelfTransferPercent = 50.0;
 
 	/// <summary>The floor to use when the device cannot enforce an absolute cap. Without
 	/// <c>max_sats_leaving</c> the ratio is the only guard there is, so it has to stay tight — relaxing it
@@ -144,7 +151,8 @@ public static class ColdcardHsmPolicy
 		}
 
 		return Compose(accountPaths, new ColdcardLimits(
-			MinSelfTransferPercent: keyManager.ColdcardMinSelfTransferPercent,
+			// Fixed, not a setting: it is the sanity floor behind the feerate limit, not a knob.
+			MinSelfTransferPercent: DefaultMinSelfTransferPercent,
 			MaxSatsLeaving: keyManager.ColdcardMaxSatsLeaving,
 			MaxTransactions: keyManager.TrezorCoinjoinMaxRounds,
 			MaxTransactionsPerPeriod: keyManager.ColdcardMaxTransactionsPerPeriod,

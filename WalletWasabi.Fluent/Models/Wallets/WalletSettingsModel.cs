@@ -27,7 +27,6 @@ public partial class WalletSettingsModel : ReactiveObject
 	[AutoNotify] private int _anonScoreTarget;
 	[AutoNotify] private int _trezorCoinjoinMaxRounds;
 	[AutoNotify] private decimal _trezorCoinjoinMaxMiningFeeRate;
-	[AutoNotify] private double _coldcardMinSelfTransferPercent;
 	[AutoNotify] private long _coldcardMaxSatsLeaving;
 	[AutoNotify] private int _coldcardMaxTransactionsPerPeriod;
 	[AutoNotify] private int _coldcardMinInputs;
@@ -52,7 +51,6 @@ public partial class WalletSettingsModel : ReactiveObject
 		_anonScoreTarget = _keyManager.AnonScoreTarget;
 		_trezorCoinjoinMaxRounds = _keyManager.TrezorCoinjoinMaxRounds;
 		_trezorCoinjoinMaxMiningFeeRate = _keyManager.TrezorCoinjoinMaxMiningFeeRate;
-		_coldcardMinSelfTransferPercent = _keyManager.ColdcardMinSelfTransferPercent;
 		_coldcardMaxSatsLeaving = _keyManager.ColdcardMaxSatsLeaving;
 		_coldcardMaxTransactionsPerPeriod = _keyManager.ColdcardMaxTransactionsPerPeriod;
 		_coldcardMinInputs = _keyManager.ColdcardMinInputs;
@@ -82,7 +80,6 @@ public partial class WalletSettingsModel : ReactiveObject
 		this.WhenAnyValue(
 				x => x.TrezorCoinjoinMaxRounds,
 				x => x.TrezorCoinjoinMaxMiningFeeRate,
-				x => x.ColdcardMinSelfTransferPercent,
 				x => x.ColdcardMaxSatsLeaving,
 				x => x.ColdcardMaxTransactionsPerPeriod,
 				x => x.ColdcardMinInputs)
@@ -186,7 +183,6 @@ public partial class WalletSettingsModel : ReactiveObject
 		_keyManager.AnonScoreTarget = AnonScoreTarget;
 		_keyManager.TrezorCoinjoinMaxRounds = TrezorCoinjoinMaxRounds;
 		_keyManager.TrezorCoinjoinMaxMiningFeeRate = TrezorCoinjoinMaxMiningFeeRate;
-		_keyManager.ColdcardMinSelfTransferPercent = ColdcardMinSelfTransferPercent;
 		_keyManager.ColdcardMaxSatsLeaving = ColdcardMaxSatsLeaving;
 		_keyManager.ColdcardMaxTransactionsPerPeriod = ColdcardMaxTransactionsPerPeriod;
 		_keyManager.ColdcardMinInputs = ColdcardMinInputs;

@@ -41,7 +41,6 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _plebStopThreshold;
 	[AutoNotify] private string _trezorMaxRounds;
 	[AutoNotify] private string _trezorMaxMiningFeeRate;
-	[AutoNotify] private string _coldcardMinSelfTransfer;
 	[AutoNotify] private string _coldcardMaxSatsLeaving;
 	[AutoNotify] private string _coldcardMaxTxnPerPeriod;
 	[AutoNotify] private string _coldcardMinInputs;
@@ -77,7 +76,6 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 			coinjoin.WhenAnyValue(x => x.DevicePolicyHash)
 				.BindTo(this, x => x.DevicePolicyHash);
 		}
-		_coldcardMinSelfTransfer = _wallet.Settings.ColdcardMinSelfTransferPercent.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMaxSatsLeaving = _wallet.Settings.ColdcardMaxSatsLeaving.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMaxTxnPerPeriod = _wallet.Settings.ColdcardMaxTransactionsPerPeriod.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		_coldcardMinInputs = _wallet.Settings.ColdcardMinInputs.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -130,7 +128,6 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		this.ValidateProperty(x => x.AnonScoreTarget, ValidateAnonScoreTarget);
 		this.ValidateProperty(x => x.TrezorMaxRounds, ValidateTrezorMaxRounds);
 		this.ValidateProperty(x => x.TrezorMaxMiningFeeRate, ValidateTrezorMaxMiningFeeRate);
-		this.ValidateProperty(x => x.ColdcardMinSelfTransfer, ValidateColdcardMinSelfTransfer);
 		this.ValidateProperty(x => x.ColdcardMaxSatsLeaving, ValidateColdcardMaxSatsLeaving);
 		this.ValidateProperty(x => x.ColdcardMaxTxnPerPeriod, ValidateColdcardMaxTxnPerPeriod);
 		this.ValidateProperty(x => x.ColdcardMinInputs, ValidateColdcardMinInputs);
@@ -167,7 +164,10 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	/// of them — hiding them left Coldcard users with an invisible 5 sat/vByte cap they could not change.</summary>
 	public bool IsHardwareCoinJoinWallet { get; }
 
-	/// <summary>Only a Coldcard has a self-transfer floor; the setting must not appear for other vendors.</summary>
+	/// <summary>Gates the Coldcard-only limits (absolute cap, rate limit, minimum round size) so they do not
+	/// appear for other vendors. The self-transfer ratio is no longer among them: it is fixed at
+	/// <see cref="WalletWasabi.Hwi.Coldcard.ColdcardHsmPolicy.DefaultMinSelfTransferPercent"/> as a sanity
+	/// floor behind the fee rate limit, and a limit that only fires on disaster is not a dial to offer.</summary>
 	public bool IsColdcardCoinJoinWallet { get; }
 
 	/// <summary>Who actually enforces those two limits, worded per vendor so the UI never implies a
@@ -249,24 +249,6 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		else
 		{
 			errors.Add(ErrorSeverity.Error, "Must be a positive fee rate in sat/vByte.");
-		}
-	}
-
-	private void ValidateColdcardMinSelfTransfer(IValidationErrors errors)
-	{
-		// Floor of 50: below that the device would be waving through transactions that hand half the
-		// wallet away, which is not a coinjoin. The ceiling is just under 100 because a round always
-		// costs something in fees, so exactly 100 could never be met.
-		if (double.TryParse(ColdcardMinSelfTransfer, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var percent)
-			&& percent is >= 50 and <= 99.9)
-		{
-			_wallet.Settings.ColdcardMinSelfTransferPercent = percent;
-			_wallet.Settings.Save();
-			RefreshColdcardPolicySync();
-		}
-		else
-		{
-			errors.Add(ErrorSeverity.Error, "Must be between 50 and 99.9 percent.");
 		}
 	}
 

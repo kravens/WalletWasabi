@@ -110,11 +110,12 @@
       <TextBox Classes="standalone" Text="{Binding TrezorMaxMiningFeeRate}" DockPanel.Dock="Right" Watermark="e.g. 5" MaxLength="6" />
     </DockPanel>
 
-    <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"
-               ToolTip.Tip="The share of your own value the Coldcard requires back in a round. A share alone is the wrong shape for this: mining fees are a large slice of a small coin and a trivial slice of a big one, so a percentage tight enough to protect large amounts refuses ordinary rounds on small ones. It works with the amount limit below, which is what guards large wallets.">
-      <TextBlock Text="Minimum self-transfer (%)" />
-      <TextBox Classes="standalone" Text="{Binding ColdcardMinSelfTransfer}" DockPanel.Dock="Right" Watermark="95" MaxLength="5" />
-    </DockPanel>
+    <!--
+      No self-transfer percentage here on purpose. It is fixed at 50% in ColdcardHsmPolicy as a sanity
+      floor behind the fee rate limit above, which is the number that actually decides rounds. A ratio
+      refuses honest rounds on small coins at a threshold that moves with the network, so exposing it
+      invited exactly the confusion this screen should not create.
+    -->
 
     <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"
                ToolTip.Tip="The most of your own value the device will let leave in one transaction — your share of the mining fee, plus anything lost. This is the limit that protects a large wallet, where a percentage would allow far more than you would accept. Raise it only if rounds are refused at realistic fee rates.">

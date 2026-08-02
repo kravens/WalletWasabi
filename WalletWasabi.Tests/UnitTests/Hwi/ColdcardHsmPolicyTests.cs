@@ -21,12 +21,17 @@ public class ColdcardHsmPolicyTests
 	[Fact]
 	public void TheDefaultsGuardBothEndsOfTheScale()
 	{
-		// A ratio alone is the wrong shape: what it permits scales with the amount, while mining fees
-		// scale the other way. The floor is only safe at 95 because the absolute cap sits beside it, and
-		// the pair is what makes the relaxed ratio defensible — see FloorWithoutAbsoluteCap.
-		Assert.Equal(95.0, ColdcardHsmPolicy.DefaultMinSelfTransferPercent);
-		Assert.Equal(99.0, ColdcardHsmPolicy.FloorWithoutAbsoluteCap);
+		// Three limits of three different shapes: a fraction of value, an absolute number of sats, and a
+		// price per byte. The feerate is the one that decides real rounds, because it is the only one
+		// with no term that scales with the coin — a ratio refuses honest rounds on small coins at a
+		// threshold that moves with the network. The ratio stays at 50 purely as the guard that knows how
+		// much is at stake, since a large byte count legitimately buys a large absolute loss.
+		Assert.Equal(50.0, ColdcardHsmPolicy.DefaultMinSelfTransferPercent);
 		Assert.Equal(100_000, ColdcardHsmPolicy.DefaultMaxSatsLeaving);
+
+		// The legacy path has neither of the other two, so there the ratio is the only guard and has to
+		// stay tight. Relaxing this one alongside the default would be a silent downgrade.
+		Assert.Equal(99.0, ColdcardHsmPolicy.FloorWithoutAbsoluteCap);
 	}
 
 	[Fact]
@@ -38,7 +43,7 @@ public class ColdcardHsmPolicyTests
 		var root = doc.RootElement;
 
 		Assert.True(root.GetProperty("warnings_ok").GetBoolean());
-		Assert.Equal(95.0, root.GetProperty("rules")[0].GetProperty("min_pct_self_transfer").GetDouble());
+		Assert.Equal(50.0, root.GetProperty("rules")[0].GetProperty("min_pct_self_transfer").GetDouble());
 
 		// Ownership proofs whitelisted for the receive and change branch of both accounts.
 		var paths = root.GetProperty("slip19_paths").EnumerateArray().Select(x => x.GetString()).ToHashSet();

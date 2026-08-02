@@ -37,14 +37,6 @@ public class KeyManager
 	public const bool DefaultAutoCoinjoin = false;
 	public const bool DefaultRedCoinIsolation = false;
 	public const int DefaultTrezorCoinjoinMaxRounds = 50; // Failed/blame rounds also consume an authorized round, so leave headroom before the device asks again.
-	/// <summary>The Coldcard HSM floor: the minimum share of our own input value that must come back to
-	/// us, so at most (100 - this)% can leave in any one signed transaction. Adjustable because it has
-	/// little headroom in practice — legitimate rounds were observed landing at 96.7-98.9% when mining
-	/// fees were a real fraction of the coins being mixed, and a device that refuses everything with no
-	/// way to tune it looks broken. Lowering it widens what a compromised host could take per
-	/// transaction, so the device shows the value when the policy is approved.</summary>
-	public const double DefaultColdcardMinSelfTransferPercent = 95.0;
-
 	public const decimal DefaultTrezorCoinjoinMaxMiningFeeRate = 5m; // sat/vByte, the device refuses rounds above this cap; keep it tight so coinjoin never overpays on mainnet.
 
 	public const int AbsoluteMinGapLimit = 21;
@@ -215,7 +207,6 @@ public class KeyManager
 
 	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal TrezorCoinjoinMaxMiningFeeRate { get; set; } = DefaultTrezorCoinjoinMaxMiningFeeRate;
-	public double ColdcardMinSelfTransferPercent { get; set; } = DefaultColdcardMinSelfTransferPercent;
 	public long ColdcardMaxSatsLeaving { get; set; } = ColdcardHsmPolicy.DefaultMaxSatsLeaving;
 	public int ColdcardMaxTransactionsPerPeriod { get; set; } = ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod;
 	public int ColdcardPeriodMinutes { get; set; } = ColdcardHsmPolicy.DefaultPeriodMinutes;
@@ -865,7 +856,6 @@ public class KeyManager
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
 			("TrezorCoinjoinMaxRounds", Encode.Int(keyManager.TrezorCoinjoinMaxRounds)),
 			("TrezorCoinjoinMaxMiningFeeRate", Encode.Decimal(keyManager.TrezorCoinjoinMaxMiningFeeRate)),
-			("ColdcardMinSelfTransferPercent", Encode.Decimal((decimal)keyManager.ColdcardMinSelfTransferPercent)),
 			("ColdcardMaxSatsLeaving", Encode.Int((int)keyManager.ColdcardMaxSatsLeaving)),
 			("ColdcardMaxTransactionsPerPeriod", Encode.Int(keyManager.ColdcardMaxTransactionsPerPeriod)),
 			("ColdcardMinInputs", Encode.Int(keyManager.ColdcardMinInputs)),
@@ -914,7 +904,9 @@ public class KeyManager
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
 				TrezorCoinjoinMaxRounds = get.Optional("TrezorCoinjoinMaxRounds", Decode.Int, DefaultTrezorCoinjoinMaxRounds),
 				TrezorCoinjoinMaxMiningFeeRate = get.Optional("TrezorCoinjoinMaxMiningFeeRate", Decode.Decimal, DefaultTrezorCoinjoinMaxMiningFeeRate),
-				ColdcardMinSelfTransferPercent = (double)get.Optional("ColdcardMinSelfTransferPercent", Decode.Decimal, (decimal)DefaultColdcardMinSelfTransferPercent),
+				// "ColdcardMinSelfTransferPercent" was a setting until the feerate limit took over as the
+				// working guard. Wallet files still carry it; it is deliberately ignored, and the ratio is
+				// now fixed at ColdcardHsmPolicy.DefaultMinSelfTransferPercent.
 				ColdcardMaxSatsLeaving = get.Optional("ColdcardMaxSatsLeaving", Decode.Int, (int)ColdcardHsmPolicy.DefaultMaxSatsLeaving),
 				ColdcardMaxTransactionsPerPeriod = get.Optional("ColdcardMaxTransactionsPerPeriod", Decode.Int, ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod),
 				ColdcardMinInputs = get.Optional("ColdcardMinInputs", Decode.Int, ColdcardHsmPolicy.DefaultMinInputs),
