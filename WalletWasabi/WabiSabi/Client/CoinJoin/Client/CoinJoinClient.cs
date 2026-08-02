@@ -611,16 +611,22 @@ public class CoinJoinClient
 			scheduledDates,
 			async (aliceClient, scheduledDate) =>
 			{
+				// Scheduling the request at a random point in the signing phase hides our timing from the
+				// coordinator, and assumes signing itself is free. On a hardware signer it is not: a Coldcard
+				// takes around two minutes on a mainnet coinjoin, and that comes out of the same phase, so
+				// paying the wait as well loses the round. Ask such a signer immediately instead.
 				var delay = scheduledDate - DateTimeOffset.UtcNow;
-				if (delay > TimeSpan.Zero)
+				var remaining = (signingEndTime - DateTimeOffset.UtcNow).TotalSeconds;
+				if (delay > TimeSpan.Zero && !_keyChain.SignsSlowly)
 				{
-					// Scheduling the request at a random point in the signing phase hides timing from the
-					// coordinator, and assumes signing itself is free. On a hardware signer it is not: a Coldcard
-					// takes around two minutes on a mainnet coinjoin, and this wait comes out of the same phase.
-					// Logged so both costs are visible together.
 					Logger.LogInfo($"Waiting {delay.TotalSeconds:F1}s before asking the signer; "
-						+ $"{(signingEndTime - DateTimeOffset.UtcNow).TotalSeconds:F1}s left in the signing phase.");
+						+ $"{remaining:F1}s left in the signing phase.");
 					await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+				}
+				else if (delay > TimeSpan.Zero)
+				{
+					Logger.LogInfo($"Skipping the {delay.TotalSeconds:F1}s scheduled wait: this signer needs "
+						+ $"the phase, and {remaining:F1}s of it is left.");
 				}
 				try
 				{

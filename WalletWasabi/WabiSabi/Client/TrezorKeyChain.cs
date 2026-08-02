@@ -41,6 +41,9 @@ public class TrezorKeyChain : IKeyChain, IDisposable
 
 	public TrezorDevice Device => _device;
 
+	/// <inheritdoc />
+	public bool SignsSlowly => true;
+
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
 		var keyPath = GetKeyPath(destination.ScriptPubKey);

@@ -17,4 +17,13 @@ public interface IKeyChain
 	/// rounds the device is certain to refuse.
 	/// </summary>
 	int? MinRoundInputs => null;
+
+	/// <summary>
+	/// True when producing a signature takes a large share of the signing phase, as it does on a
+	/// hardware signer. The client then asks for the signature as soon as the phase opens instead of
+	/// scheduling it at a random point inside it. That random wait exists to hide our timing from the
+	/// coordinator, and it assumes signing is free; a device that needs most of the phase to answer
+	/// cannot pay for it, and a round missed is worse for privacy than a round joined predictably.
+	/// </summary>
+	bool SignsSlowly => false;
 }

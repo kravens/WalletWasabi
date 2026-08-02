@@ -48,6 +48,10 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	/// <inheritdoc />
 	public int? MinRoundInputs => _keyManager.ColdcardMinInputs > 0 ? _keyManager.ColdcardMinInputs : null;
 
+	/// <inheritdoc />
+	/// <remarks>Measured at 91-117s for a mainnet round, against a signing phase of about 90s.</remarks>
+	public bool SignsSlowly => true;
+
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
 		if (RoundsExhausted)
