@@ -53,12 +53,6 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	public bool SignsSlowly => true;
 
 	/// <inheritdoc />
-	/// <remarks>The same number the policy carries as <c>max_fee_per_kvbyte</c>, so the client's
-	/// prediction and the device's rule cannot drift apart.</remarks>
-	public long? MaxLossPerKvByte =>
-		ColdcardHsmPolicy.FeeRateToPerKvByte(_keyManager.TrezorCoinjoinMaxMiningFeeRate);
-
-	/// <inheritdoc />
 	/// <remarks>This firmware line has no taproot support: <c>psbt.py</c> never parses
 	/// PSBT_IN_TAP_BIP32_DERIVATION, so a taproot input of ours arrives with no derivation the device
 	/// recognises and is skipped without any error. Registering one would look like the device simply
