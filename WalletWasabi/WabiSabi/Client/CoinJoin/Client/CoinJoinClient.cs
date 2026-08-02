@@ -166,6 +166,19 @@ public class CoinJoinClient
 
 			coins = _coinJoinCoinSelector.SelectCoinsForRound(coinCandidates, utxoSelectionParameters, liquidityClue);
 
+			// Drop coins the signing device would refuse or silently skip. Both are worse than not
+			// registering: an input that goes unsigned disrupts the round, and the coordinator prisons
+			// it for that. The device is right to refuse in either case - the mistake is ours for
+			// putting the coin in front of it.
+			coins = DropCoinsTheSignerWouldNotSign(coins, roundParameters, currentRoundState);
+			if (!coins.Any())
+			{
+				excludeRound = currentRoundState.Id;
+				Logger.LogInfo(FormatLog("Skipping the round: no selected coin is one this signer will sign.", currentRoundState));
+
+				continue;
+			}
+
 			if (!roundParameters.AllowedInputTypes.Contains(ScriptType.P2WPKH) || !roundParameters.AllowedOutputTypes.Contains(ScriptType.P2WPKH))
 			{
 				excludeRound = currentRoundState.Id;
@@ -593,6 +606,81 @@ public class CoinJoinClient
 				.All(x => x >= Money.Zero);
 
 		return AllExpectedScriptsArePresent() && AllOutputsHaveAtLeastTheExpectedValue();
+	}
+
+	/// <summary>
+	/// Upper bound on what mixing one coin costs us per 1000 vbytes of our own contribution — the
+	/// quantity the device's <c>max_fee_per_kvbyte</c> rule measures.
+	///
+	/// Pessimistic on purpose. It charges the coin the network fee for its own input and output, and
+	/// assumes any remainder too small to register as an output is abandoned as fee. Over-estimating
+	/// skips a coin that might have been fine; under-estimating registers one the device refuses,
+	/// which disrupts the round and gets the input prisoned. Only one of those is recoverable.
+	/// </summary>
+	internal static long WorstCaseLossPerKvByte(
+		Money amount, ScriptType scriptType, FeeRate miningFeeRate, Money minRegistrable)
+	{
+		// Our own contribution for this coin: the input, plus the one output it becomes.
+		var ourVsize = Math.Max(1, scriptType.EstimateInputVsize() + scriptType.EstimateOutputVsize());
+		var networkFee = miningFeeRate.GetFee(ourVsize);
+
+		var afterFee = amount - networkFee;
+		var stranded = afterFee < minRegistrable ? afterFee : Money.Zero;
+		var worstLoss = networkFee + (stranded > Money.Zero ? stranded : Money.Zero);
+
+		return worstLoss.Satoshi * 1000L / ourVsize;
+	}
+
+	/// <summary>
+	/// Removes coins this signer cannot or will not sign, before anything is registered.
+	///
+	/// The loss estimate is deliberately pessimistic: it assumes the coin's remainder below the
+	/// round's minimum registrable amount is lost to fees, which is the case that produced the only
+	/// refusal seen on hardware. Over-estimating costs at worst a skipped coin; under-estimating costs
+	/// a disrupted round and a prisoned input, so the asymmetry decides the direction.
+	/// </summary>
+	private ImmutableList<SmartCoin> DropCoinsTheSignerWouldNotSign(
+		ImmutableList<SmartCoin> selected, RoundParameters roundParameters, RoundState roundState)
+	{
+		var kept = selected;
+
+		var unsignable = kept.Where(c => !_keyChain.CanSign(c.ScriptType)).ToList();
+		if (unsignable.Count > 0)
+		{
+			Logger.LogWarning(FormatLog(
+				$"Dropping {unsignable.Count} coin(s) the signer cannot sign: "
+				+ string.Join(", ", unsignable.Select(c => c.ScriptType).Distinct()) + ".", roundState));
+			kept = kept.RemoveRange(unsignable);
+		}
+
+		if (_keyChain.MaxLossPerKvByte is { } cap)
+		{
+			var tooExpensive = new List<SmartCoin>();
+			foreach (var coin in kept)
+			{
+				var perKvByte = WorstCaseLossPerKvByte(
+					coin.Amount, coin.ScriptType, roundParameters.MiningFeeRate,
+					roundParameters.MinAmountCredentialValue);
+
+				if (perKvByte > cap)
+				{
+					tooExpensive.Add(coin);
+					Logger.LogDebug(FormatLog(
+						$"Coin {coin.Amount} would cost up to {perKvByte} sats/kvB of ours, over the "
+						+ $"signer's {cap} limit; not registering it.", roundState));
+				}
+			}
+
+			if (tooExpensive.Count > 0)
+			{
+				Logger.LogInfo(FormatLog(
+					$"Dropping {tooExpensive.Count} coin(s) too small to mix within the signer's fee "
+					+ $"limit of {cap} sats/kvB.", roundState));
+				kept = kept.RemoveRange(tooExpensive);
+			}
+		}
+
+		return kept;
 	}
 
 	private async Task SignTransactionAsync(

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using NBitcoin;
@@ -51,6 +52,19 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	/// <inheritdoc />
 	/// <remarks>Measured at 91-117s for a mainnet round, against a signing phase of about 90s.</remarks>
 	public bool SignsSlowly => true;
+
+	/// <inheritdoc />
+	/// <remarks>The same number the policy carries as <c>max_fee_per_kvbyte</c>, so the client's
+	/// prediction and the device's rule cannot drift apart.</remarks>
+	public long? MaxLossPerKvByte =>
+		ColdcardHsmPolicy.FeeRateToPerKvByte(_keyManager.TrezorCoinjoinMaxMiningFeeRate);
+
+	/// <inheritdoc />
+	/// <remarks>This firmware line has no taproot support: <c>psbt.py</c> never parses
+	/// PSBT_IN_TAP_BIP32_DERIVATION, so a taproot input of ours arrives with no derivation the device
+	/// recognises and is skipped without any error. Registering one would look like the device simply
+	/// failing to sign.</remarks>
+	public bool CanSign(ScriptType scriptType) => scriptType == ScriptType.P2WPKH;
 
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
@@ -154,14 +168,42 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		var psbtBytes = psbt.ToBytes();
 		var started = DateTimeOffset.UtcNow;
 		var signedBytes = _device.SignPsbt(psbtBytes, timeout.Token);
-		Logger.LogInfo(
-			$"Coldcard signed {ourOutpoints.Count} input(s) of a {psbtBytes.Length:N0}-byte PSBT in "
-			+ $"{(DateTimeOffset.UtcNow - started).TotalSeconds:F1}s.");
+		var elapsed = (DateTimeOffset.UtcNow - started).TotalSeconds;
 		var signedPsbt = PSBT.Load(signedBytes, network);
+
+		// Counted before finalizing: TryFinalize consumes PartialSigs into FinalScriptWitness, so counting
+		// after it reports zero signatures on every successful round - the opposite of what this is for.
+		var ourSigned = signedPsbt.Inputs.Count(i => ourOutpoints.Contains(i.PrevOut) && i.PartialSigs.Count > 0);
 
 		// Only our inputs can finalize; the foreign ones are witness-utxo-only and unsigned, so a full
 		// Finalize() would throw on every multi-party round.
 		signedPsbt.TryFinalize(out _);
+		var ourFinal = signedPsbt.Inputs.Count(i => ourOutpoints.Contains(i.PrevOut) && i.FinalScriptWitness is not null);
+
+		Logger.LogInfo(
+			$"Coldcard returned {ourSigned} signature(s) and {ourFinal} finalized witness(es) for the "
+			+ $"{ourOutpoints.Count} input(s) we asked about, from a {psbtBytes.Length:N0}-byte PSBT in {elapsed:F1}s.");
+
+		// A device that signs nothing, or signs but will not finalize, is indistinguishable from a healthy
+		// one at this layer — both return a PSBT. Keep the evidence rather than a guess about which it was.
+		if (ourFinal < ourOutpoints.Count)
+		{
+			try
+			{
+				// Beside the log, so it lands in whichever data directory this instance is actually using
+				// rather than a hardcoded one — regtest and mainnet runs must not write over each other.
+				var dir = Path.Combine(Path.GetDirectoryName(Logger.FilePath) ?? ".", "ColdcardDebug");
+				Directory.CreateDirectory(dir);
+				var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+				File.WriteAllBytes(Path.Combine(dir, $"{stamp}-sent.psbt"), psbtBytes);
+				File.WriteAllBytes(Path.Combine(dir, $"{stamp}-returned.psbt"), signedBytes);
+				Logger.LogWarning($"Coldcard did not return a usable witness; PSBTs written to '{dir}'.");
+			}
+			catch (Exception ex)
+			{
+				Logger.LogWarning($"Could not save the Coldcard PSBTs for diagnosis: {ex.Message}");
+			}
+		}
 
 		// Written under _signingLock but read by GetOwnershipProof, which runs unsynchronised while
 		// inputs register in parallel.

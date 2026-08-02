@@ -461,7 +461,13 @@ public sealed class ColdcardDevice : IDisposable
 			//
 			// The real deadline is cancellationToken. This only stops a busy device being mistaken for a
 			// dead one; a genuinely wedged device still ends the wait, just at the caller's budget.
-			var (tag, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("stok"), timeoutMs: 120_000);
+			//
+			// Measured on an Mk4 signing coinjoin-shaped PSBTs under HSM: ~2.3ms per PSBT byte, so
+			// 41,969 bytes took 93.5s and 52,401 bytes took 122.4s. The previous 120s value sat inside
+			// that range - a large round would exceed it and be reported as a read error while the
+			// device was working normally, which is exactly what a bench sweep hit at 52KB. 300s covers
+			// roughly 130KB, well past any round a coordinator builds today.
+			var (tag, payload) = _transport.SendReceive(Encoding.ASCII.GetBytes("stok"), timeoutMs: 300_000);
 			if (tag == "strx") // done: <I32s> length + sha
 			{
 				if (payload.Length < 36)
