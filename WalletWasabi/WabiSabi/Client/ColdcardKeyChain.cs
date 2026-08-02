@@ -116,12 +116,38 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		var transaction = unsignedCoinJoin.Transaction;
 		var spentOutputs = ((TaprootReadyPrecomputedTransactionData)unsignedCoinJoin.PrecomputedTransactionData).SpentOutputs;
 
-		// Build the PSBT: witness UTXOs for every input (so the device sees the amounts), plus key paths for
-		// the inputs that are ours (so it signs them; foreign inputs are left for their owners to sign).
+		var isOurs = new bool[transaction.Inputs.Count];
+		for (int i = 0; i < isOurs.Length; i++)
+		{
+			isOurs[i] = _keyManager.TryGetKeyPath(spentOutputs[i].ScriptPubKey) is not null;
+		}
+
+		// Build the PSBT: witness UTXOs for our inputs only, plus key paths for those same inputs so the
+		// device signs them. Foreign inputs carry nothing but their outpoint from the unsigned tx.
+		//
+		// Our inputs must keep theirs — BIP-143 signs the amount, and the firmware refuses outright:
+		// "Missing own UTXO(s). Cannot determine value being signed". Foreign ones are not needed by
+		// anything the device does:
+		//
+		//   - the sighash commits to foreign inputs through hashPrevouts and hashSequence, both built
+		//     from the unsigned transaction, never from witness_utxo;
+		//   - the HSM value rules sum only inputs with num_our_keys, so foreign amounts never enter
+		//     min_pct_self_transfer, max_sats_leaving or max_fee_per_kvbyte;
+		//   - the transaction-wide fee check is already skipped for these PSBTs, because foreign
+		//     witness UTXOs arrive unverified and set total_value_in to None either way.
+		//
+		// The gain is twofold. It removes roughly a quarter of the bytes on a mainnet round, and the
+		// firmware's consider_inputs takes an early `continue` for an input with no UTXO, skipping both
+		// get_utxo (its own comment calls it expensive) and determine_my_signing_key. On a device that
+		// needs ~2.7ms per PSBT byte against ~55s of signing phase, that is the difference between
+		// making the round and missing it.
 		var psbt = PSBT.FromTransaction(transaction, network);
 		for (int i = 0; i < psbt.Inputs.Count; i++)
 		{
-			psbt.Inputs[i].WitnessUtxo = spentOutputs[i];
+			if (isOurs[i])
+			{
+				psbt.Inputs[i].WitnessUtxo = spentOutputs[i];
+			}
 		}
 		psbt.AddKeyPaths(_keyManager);
 
@@ -145,7 +171,7 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		// Foreign input amounts never enter the policy: it sums only inputs with num_our_keys.
 
 		var ourOutpoints = transaction.Inputs.AsIndexedInputs()
-			.Where(input => _keyManager.TryGetKeyPath(spentOutputs[(int)input.Index].ScriptPubKey) is not null)
+			.Where(input => isOurs[(int)input.Index])
 			.Select(input => input.PrevOut)
 			.ToHashSet();
 
