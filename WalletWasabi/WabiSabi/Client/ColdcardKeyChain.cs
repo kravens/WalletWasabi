@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using NBitcoin;
@@ -184,25 +183,14 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 			$"Coldcard returned {ourSigned} signature(s) and {ourFinal} finalized witness(es) for the "
 			+ $"{ourOutpoints.Count} input(s) we asked about, from a {psbtBytes.Length:N0}-byte PSBT in {elapsed:F1}s.");
 
-		// A device that signs nothing, or signs but will not finalize, is indistinguishable from a healthy
-		// one at this layer — both return a PSBT. Keep the evidence rather than a guess about which it was.
 		if (ourFinal < ourOutpoints.Count)
 		{
-			try
-			{
-				// Beside the log, so it lands in whichever data directory this instance is actually using
-				// rather than a hardcoded one — regtest and mainnet runs must not write over each other.
-				var dir = Path.Combine(Path.GetDirectoryName(Logger.FilePath) ?? ".", "ColdcardDebug");
-				Directory.CreateDirectory(dir);
-				var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
-				File.WriteAllBytes(Path.Combine(dir, $"{stamp}-sent.psbt"), psbtBytes);
-				File.WriteAllBytes(Path.Combine(dir, $"{stamp}-returned.psbt"), signedBytes);
-				Logger.LogWarning($"Coldcard did not return a usable witness; PSBTs written to '{dir}'.");
-			}
-			catch (Exception ex)
-			{
-				Logger.LogWarning($"Could not save the Coldcard PSBTs for diagnosis: {ex.Message}");
-			}
+			// A device that signs nothing, and one that signs but will not finalize, look identical here:
+			// both return a PSBT. Say which it was, because the round is about to fail either way and the
+			// two have completely different causes.
+			Logger.LogWarning(
+				$"Coldcard returned no usable witness for {ourOutpoints.Count - ourFinal} of our input(s). "
+				+ $"It reported {ourSigned} signature(s), so it {(ourSigned > 0 ? "signed but finalization failed" : "did not sign at all")}.");
 		}
 
 		// Written under _signingLock but read by GetOwnershipProof, which runs unsynchronised while
