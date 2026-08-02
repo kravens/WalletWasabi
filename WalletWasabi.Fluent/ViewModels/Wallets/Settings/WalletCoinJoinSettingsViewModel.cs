@@ -235,6 +235,14 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	{
 		if (decimal.TryParse(TrezorMaxMiningFeeRate, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var feeRate) && feeRate is > 0 and <= 10000)
 		{
+			// Below the relay floor nothing can confirm, so every round is skipped and — on a Coldcard,
+			// which enforces this too — every round the host does try is refused by the device. Say so,
+			// rather than leaving a wallet that silently never joins anything.
+			if (feeRate < 0.1m)
+			{
+				errors.Add(ErrorSeverity.Warning, "Below 0.1 sat/vByte nothing relays, so no round will ever qualify.");
+			}
+
 			_wallet.Settings.TrezorCoinjoinMaxMiningFeeRate = feeRate;
 			_wallet.Settings.Save();
 		}

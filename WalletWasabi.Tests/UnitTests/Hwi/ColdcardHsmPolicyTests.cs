@@ -51,7 +51,7 @@ public class ColdcardHsmPolicyTests
 	[Fact]
 	public void EveryDeviceSideLimitReachesThePolicy()
 	{
-		// All five are enforced by the device. If any silently failed to serialise, the limit would exist
+		// All six are enforced by the device. If any silently failed to serialise, the limit would exist
 		// only in the UI while the device enforced nothing.
 		var json = ColdcardHsmPolicy.Compose([Segwit], new ColdcardHsmPolicy.ColdcardLimits(
 			MinSelfTransferPercent: 97.5,
@@ -59,7 +59,8 @@ public class ColdcardHsmPolicyTests
 			MaxTransactions: 50,
 			MaxTransactionsPerPeriod: 4,
 			PeriodMinutes: 30,
-			MinInputs: 21));
+			MinInputs: 21,
+			MaxFeePerKvByte: 5_000));
 
 		var rule = Rule(json);
 		Assert.Equal(97.5, rule.GetProperty("min_pct_self_transfer").GetDouble());
@@ -67,6 +68,7 @@ public class ColdcardHsmPolicyTests
 		Assert.Equal(50, rule.GetProperty("max_txn").GetInt32());
 		Assert.Equal(4, rule.GetProperty("max_txn_per_period").GetInt32());
 		Assert.Equal(21, rule.GetProperty("min_inputs").GetInt32());
+		Assert.Equal(5_000, rule.GetProperty("max_fee_per_kvbyte").GetInt64());
 
 		// The device refuses a policy that measures something per period without defining one.
 		using var doc = JsonDocument.Parse(json);
@@ -83,7 +85,8 @@ public class ColdcardHsmPolicyTests
 			MaxSatsLeaving: null,
 			MaxTransactions: null,
 			MaxTransactionsPerPeriod: null,
-			MinInputs: null));
+			MinInputs: null,
+			MaxFeePerKvByte: null));
 
 		var rule = Rule(json);
 		Assert.Equal(99.0, rule.GetProperty("min_pct_self_transfer").GetDouble());
@@ -91,9 +94,32 @@ public class ColdcardHsmPolicyTests
 		Assert.False(rule.TryGetProperty("max_txn", out _));
 		Assert.False(rule.TryGetProperty("max_txn_per_period", out _));
 		Assert.False(rule.TryGetProperty("min_inputs", out _));
+		Assert.False(rule.TryGetProperty("max_fee_per_kvbyte", out _));
 
 		using var doc = JsonDocument.Parse(json);
 		Assert.False(doc.RootElement.TryGetProperty("period", out _));
+	}
+
+	[Theory]
+	[InlineData(5, 5_000)]        // already high for a coinjoin
+	[InlineData(0.5, 500)]        // the lowest a coordinator currently sets
+	[InlineData(0.1, 100)]        // still relays
+	[InlineData(1.5, 1_500)]
+	public void TheFeeRateReachesTheDeviceInItsOwnUnit(decimal satPerVByte, long expected)
+	{
+		// The user types sat/vByte; the device rule is whole sats per 1000 vbytes. Getting this factor
+		// wrong by 1000 would either refuse every round or enforce nothing, and both look like something
+		// else from the outside. Sub-1 rates are the reason the device does not take sat/vByte directly:
+		// 0.5 would truncate to 0 and refuse everything.
+		Assert.Equal(expected, ColdcardHsmPolicy.FeeRateToPerKvByte(satPerVByte));
+	}
+
+	[Fact]
+	public void TheFeeRateRoundsInTheUsersFavour()
+	{
+		// Rounding down would enforce a cap tighter than the number on screen, so a round priced exactly
+		// at the user's limit would be refused by the device that was told to allow it.
+		Assert.Equal(1_235, ColdcardHsmPolicy.FeeRateToPerKvByte(1.2341m));
 	}
 
 	[Fact]
@@ -111,6 +137,7 @@ public class ColdcardHsmPolicyTests
 		Assert.NotEqual(reference, Fingerprint(baseline with { MaxTransactionsPerPeriod = 3 }));
 		Assert.NotEqual(reference, Fingerprint(baseline with { PeriodMinutes = 120 }));
 		Assert.NotEqual(reference, Fingerprint(baseline with { MinInputs = 50 }));
+		Assert.NotEqual(reference, Fingerprint(baseline with { MaxFeePerKvByte = 5_000 }));
 
 		// Turning a limit off has to register too, or disabling one would go unnoticed.
 		Assert.NotEqual(reference, Fingerprint(baseline with { MinInputs = null }));

@@ -105,9 +105,9 @@
     </DockPanel>
 
     <DockPanel IsVisible="{Binding IsHardwareCoinJoinWallet}"
-               ToolTip.Tip="Rounds above this mining fee rate are skipped, so a coinjoin never overpays. Set it too low and rounds are skipped whenever the network is busy.">
-      <TextBlock Text="Max mining fee rate (sat/vByte)" />
-      <TextBox Classes="standalone" Text="{Binding TrezorMaxMiningFeeRate}" DockPanel.Dock="Right" Watermark="e.g. 200" MaxLength="6" />
+               ToolTip.Tip="Rounds above this rate are skipped, so a coinjoin never overpays. Set it too low and rounds are skipped whenever the network is busy. Around 5 is already high for a coinjoin; coordinators currently set 0.5 at the lowest. On a Coldcard the device enforces this as well, which is what makes it hold against a compromised computer — and there it prices everything you lose in a round, so a coordinator fee counts toward it alongside the mining fee.">
+      <TextBlock Text="Max fee rate (sat/vByte)" />
+      <TextBox Classes="standalone" Text="{Binding TrezorMaxMiningFeeRate}" DockPanel.Dock="Right" Watermark="e.g. 5" MaxLength="6" />
     </DockPanel>
 
     <DockPanel IsVisible="{Binding IsColdcardCoinJoinWallet}"

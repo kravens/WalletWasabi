@@ -62,13 +62,25 @@ public static class ColdcardHsmPolicy
 	/// <param name="MaxTransactionsPerPeriod">Null for firmware predating <c>max_txn_per_period</c>.</param>
 	/// <param name="MinInputs">Null for firmware predating <c>min_inputs</c>, and when the user has turned the
 	/// floor off. Only the client-side minimum input count applies then, which the host can ignore.</param>
+	/// <param name="MaxFeePerKvByte">Null for firmware predating <c>max_fee_per_kvbyte</c>. Sats per 1000
+	/// vbytes of our own inputs and outputs — see <see cref="FeeRateToPerKvByte"/> for why the unit is not
+	/// sat/vByte.</param>
 	public record ColdcardLimits(
 		double MinSelfTransferPercent = DefaultMinSelfTransferPercent,
 		long? MaxSatsLeaving = DefaultMaxSatsLeaving,
 		int? MaxTransactions = null,
 		int? MaxTransactionsPerPeriod = DefaultMaxTransactionsPerPeriod,
 		int PeriodMinutes = DefaultPeriodMinutes,
-		int? MinInputs = DefaultMinInputs);
+		int? MinInputs = DefaultMinInputs,
+		long? MaxFeePerKvByte = null);
+
+	/// <summary>
+	/// Converts the sat/vByte the user sets into the sats-per-1000-vbytes the device rule takes. The device
+	/// works in whole sats per 1000 vbytes so that a rate like 0.5 sat/vByte — which coordinators do set —
+	/// survives as an integer instead of rounding to zero. Rounds up, so the cap the device enforces is never
+	/// tighter than the number on screen.
+	/// </summary>
+	public static long FeeRateToPerKvByte(decimal satPerVByte) => (long)Math.Ceiling(satPerVByte * 1000m);
 
 	public static string Compose(IEnumerable<KeyPath> accountPaths, ColdcardLimits limits)
 	{
@@ -95,6 +107,10 @@ public static class ColdcardHsmPolicy
 		if (limits.MinInputs is { } minInputs)
 		{
 			rule["min_inputs"] = minInputs;
+		}
+		if (limits.MaxFeePerKvByte is { } feeCap)
+		{
+			rule["max_fee_per_kvbyte"] = feeCap;
 		}
 
 		var policy = new Dictionary<string, object>
@@ -133,7 +149,11 @@ public static class ColdcardHsmPolicy
 			MaxTransactions: keyManager.TrezorCoinjoinMaxRounds,
 			MaxTransactionsPerPeriod: keyManager.ColdcardMaxTransactionsPerPeriod,
 			PeriodMinutes: keyManager.ColdcardPeriodMinutes,
-			MinInputs: keyManager.ColdcardMinInputs > 0 ? keyManager.ColdcardMinInputs : null));
+			MinInputs: keyManager.ColdcardMinInputs > 0 ? keyManager.ColdcardMinInputs : null,
+			// Same number the user already sets to skip expensive rounds, enforced a second time by the
+			// device. The client-side check picks which round to join and so is worth nothing against a
+			// host that has been taken over; the device is handed the transaction and can price it itself.
+			MaxFeePerKvByte: FeeRateToPerKvByte(keyManager.TrezorCoinjoinMaxMiningFeeRate)));
 	}
 
 	/// <summary>
