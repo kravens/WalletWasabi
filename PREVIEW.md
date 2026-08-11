@@ -18,6 +18,7 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 
 ### Coldcard Mk4/Mk5 — tested on Windows, Linux and Mac
 - Requires our [custom Coldcard firmware](https://github.com/kravens/firmware): branch [`feature/slip19-coinjoin`](https://github.com/kravens/firmware/tree/feature/slip19-coinjoin), or [`feature/slip19-coinjoin-edge`](https://github.com/kravens/firmware/tree/feature/slip19-coinjoin-edge) for the edge/taproot line. It adds SLIP-19 ownership proofs and the coinjoin HSM rules. (Mk4/Mk5 only: the Q ships with HSM commands disabled, Mk3 firmware is too old.)
+- A [prebuilt, PGP-signed Mk4 image](https://github.com/kravens/coinjoin.nl/tree/main/firmware) is available, with hash verification, SD-card/ckcc install steps and the way back to official Coinkite firmware.
 - Isolation comes from an HSM policy you review and approve on the device (max sats leaving, transactions per period, minimum round inputs). Signing then runs unattended under that policy.
 
 ### Foundation Passport Prime — firmware work required
