@@ -21,6 +21,7 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 - Isolation comes from an HSM policy you review and approve on the device (max sats leaving, transactions per period, minimum round inputs). Signing then runs unattended under that policy.
 
 ### Foundation Passport Prime — firmware work required
+- Dev demo: [Coinjoin Signer on Foundation's app showcase](https://foundation.xyz/app-showcase/coinjoin-signer).
 - **Stock KeyOS is not compatible.** Requires a custom KeyOS firmware build carrying the coinjoin protocol messages; without it the device will not respond.
 - USB support is Windows-first for now; treat this integration as a developer demo.
 
