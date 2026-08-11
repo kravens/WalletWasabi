@@ -16,8 +16,8 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 - Needs the Trezor bridge: either the one bundled with Trezor Suite, or a standalone `trezord`. The wallet auto-manages bridge/USB contention.
 - Mainnet coinjoin has been verified end-to-end with this stack.
 
-### Coldcard Mk4 — tested on Windows, Linux and Mac
-- Stock firmware with HSM support (Mk4 only: the Q ships with HSM commands disabled, Mk3 firmware is too old).
+### Coldcard Mk4/Mk5 — tested on Windows, Linux and Mac
+- Requires our [custom Coldcard firmware](https://github.com/kravens/firmware): branch [`feature/slip19-coinjoin`](https://github.com/kravens/firmware/tree/feature/slip19-coinjoin), or [`feature/slip19-coinjoin-edge`](https://github.com/kravens/firmware/tree/feature/slip19-coinjoin-edge) for the edge/taproot line. It adds SLIP-19 ownership proofs and the coinjoin HSM rules. (Mk4/Mk5 only: the Q ships with HSM commands disabled, Mk3 firmware is too old.)
 - Isolation comes from an HSM policy you review and approve on the device (max sats leaving, transactions per period, minimum round inputs). Signing then runs unattended under that policy.
 
 ### Foundation Passport Prime — firmware work required
