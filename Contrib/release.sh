@@ -522,6 +522,8 @@ rm $PACKAGES_DIR/*.wixpdb
 # Define paths (using your existing variables)
 SIGNTOOL="azuresigntool"
 
+# Forks (e.g. preview builds) have no signing secrets; ship the MSI unsigned instead of failing.
+if [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
 "$SIGNTOOL" sign \
     -kvu "https://wasabiwallet.vault.azure.net/" \
     -kvc "WasabiCodeSignCert" \
@@ -530,6 +532,9 @@ SIGNTOOL="azuresigntool"
     --azure-key-vault-tenant-id "$AZURE_TENANT_ID" \
     -tr "http://timestamp.digicert.com" \
     "$PACKAGES_DIR/$PACKAGE_FILE_NAME_PREFIX.msi"
+else
+    echo "No Azure signing secrets available; leaving the MSI unsigned."
+fi
 fi
 
 #------------------------------------------------------------------------------------#
@@ -664,6 +669,14 @@ KEYCHAIN_NAME="build.keychain-db"
 KEYCHAIN_PATH="$HOME/Library/Keychains/$KEYCHAIN_NAME"
 KEYCHAIN_PASSWORD="hello123"
 
+# Forks (e.g. preview builds) have no Apple certificates; produce an unsigned app/dmg instead of failing.
+MAC_SIGNING="yes"
+if [ ! -s "$P12_PATH" ]; then
+  MAC_SIGNING="no"
+  echo "No Apple signing certificates available; producing an unsigned app and dmg."
+fi
+
+if [ "$MAC_SIGNING" = "yes" ]; then
 # Create temporary keychain
 security create-keychain -p ${KEYCHAIN_PASSWORD} ${KEYCHAIN_NAME}
 security set-keychain-settings ${KEYCHAIN_NAME}
@@ -707,6 +720,10 @@ if [ $? -ne 0 ]; then
   security delete-keychain ${KEYCHAIN_NAME}
   exit 1
 fi
+else
+# Unsigned: still repackage the zip so it carries the .app bundle like the signed release does.
+ditto -c -k --keepParent "$APP_PATH" "$APP_NOTARIZE_FILE_PATH"
+fi
 
 DMG_ARCH_NAME=""
 if [ "$CURRENT_ARCH" = "arm64" ]; then
@@ -721,6 +738,7 @@ ln -s /Applications "$DMG_PATH"
 hdiutil create "$DMG_UNZIPPED_FILE_PATH" -ov -volname "Wasabi Wallet" -fs HFS+ -srcfolder "$DMG_PATH"
 hdiutil convert "$DMG_UNZIPPED_FILE_PATH" -format UDZO -o "$DMG_FILE_PATH"
 
+if [ "$MAC_SIGNING" = "yes" ]; then
 codesign $SIGN_ARGUMENTS "$DMG_FILE_PATH"
 
 if ! codesign -dv --verbose=4 "$DMG_FILE_PATH" 2>&1 | grep -q 'Authority=Developer ID Application: zkSNACKs Ltd.'; then
@@ -749,6 +767,7 @@ if [ $? -ne 0 ]; then
 fi
 
 security delete-keychain ${KEYCHAIN_NAME}
+fi
 
 mv "$DMG_FILE_PATH" "$PACKAGES_DIR"
 
