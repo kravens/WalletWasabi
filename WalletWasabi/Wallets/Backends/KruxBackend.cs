@@ -25,10 +25,16 @@ internal class KruxBackend : IHardwareWalletBackend
 		FeeRate maxMiningFeeRate,
 		CancellationToken cancellationToken)
 	{
-		if (existingKeyChain is KruxKeyChain connected)
+		if (existingKeyChain is { NeedsReauthorization: false } and KruxKeyChain connected)
 		{
 			return connected;
 		}
+
+		// Either there is no session yet, or the one we had has spent its rounds. Reconnecting re-reads the
+		// budget, so a session the user has since re-approved on the device is picked up; one they have not
+		// fails below with the reason. Returning the spent chain instead would leave the caller asking for
+		// authorization it already has, forever.
+		(existingKeyChain as IDisposable)?.Dispose();
 
 		var client = new KruxClient();
 		try

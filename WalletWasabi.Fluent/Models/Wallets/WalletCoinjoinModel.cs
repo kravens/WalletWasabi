@@ -27,6 +27,12 @@ public partial class WalletCoinjoinModel : ReactiveObject
 	/// <summary>What went wrong the last time the device was asked, as the backend described it.</summary>
 	[AutoNotify] private string _deviceAuthorizationError = "";
 
+	/// <summary>What the device says it is enforcing, read back from it after it authorized.</summary>
+	[AutoNotify] private string _devicePolicySummary = "";
+
+	/// <summary>The hash identifying that policy, so it can be compared with what was approved.</summary>
+	[AutoNotify] private string _devicePolicyHash = "";
+
 	public WalletCoinjoinModel(IServices services, Wallet wallet, CoinJoinManager coinjoinManager, WalletSettingsModel settings)
 	{
 		_services = services;
@@ -104,6 +110,7 @@ public partial class WalletCoinjoinModel : ReactiveObject
 		{
 			await _coinJoinManager.AuthorizeDeviceAsync(_wallet, CancellationToken.None).ConfigureAwait(false);
 			DeviceAuthorization = DeviceAuthorizationStatus.Confirmed;
+			await ReadDevicePolicyAsync().ConfigureAwait(false);
 			return true;
 		}
 		catch (HardwareWalletException e)
@@ -117,6 +124,24 @@ public partial class WalletCoinjoinModel : ReactiveObject
 				_ => DeviceAuthorizationStatus.Failed,
 			};
 			return false;
+		}
+	}
+
+	/// <summary>
+	/// Asks the device what policy it ended up with, so the settings screen can show the limits actually in
+	/// force rather than the ones we believe we sent. Best effort: failing to read them must not undo an
+	/// authorization that succeeded.
+	/// </summary>
+	private async Task ReadDevicePolicyAsync()
+	{
+		var policy = await _services.HardwareWallets
+			.GetDevicePolicyAsync(_wallet.KeyManager, _wallet.KeyChain, CancellationToken.None)
+			.ConfigureAwait(false);
+
+		if (policy is not null)
+		{
+			DevicePolicySummary = policy.Summary;
+			DevicePolicyHash = policy.PolicyHash;
 		}
 	}
 

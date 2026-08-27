@@ -32,11 +32,14 @@ internal class PassportBackend : IHardwareWalletBackend
 		FeeRate maxMiningFeeRate,
 		CancellationToken cancellationToken)
 	{
-		if (existingKeyChain is PassportKeyChain authorized)
+		if (existingKeyChain is { NeedsReauthorization: false } and PassportKeyChain authorized)
 		{
 			// Already inside an authorized session for this run.
 			return authorized;
 		}
+
+		// Not a session we can carry on with, so it is ours to close before opening another.
+		(existingKeyChain as IDisposable)?.Dispose();
 
 		// Passport enforces one policy per authorized session: the default segwit account, this coordinator,
 		// a per-round fee-contribution cap, self-spend outputs and a round budget. The user reviews and

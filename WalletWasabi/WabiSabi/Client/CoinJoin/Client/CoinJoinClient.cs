@@ -170,6 +170,14 @@ public class CoinJoinClient
 
 			myCoins = _coinJoinCoinSelector.SelectCoinsForRound(coinCandidates, utxoSelectionParameters, liquidityClue);
 			myCoins = DropCoinsTheSignerWouldNotSign(myCoins, currentRoundState);
+			if (myCoins.IsEmpty)
+			{
+				// Everything selected was of a type this signer cannot sign. Waiting will not change that,
+				// and "no coins to mix" would send the user looking in the wrong place.
+				throw new CoinJoinClientException(
+					CoinjoinError.NoCoinsEligibleToMix,
+					"None of the coins selected for this round can be signed by this device.");
+			}
 
 			if (!roundParameters.AllowedInputTypes.Contains(ScriptType.P2WPKH) || !roundParameters.AllowedOutputTypes.Contains(ScriptType.P2WPKH))
 			{
