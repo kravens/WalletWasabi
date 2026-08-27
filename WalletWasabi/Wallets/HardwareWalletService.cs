@@ -37,7 +37,7 @@ public class HardwareWalletService : IDisposable
 			_transportStatus = status;
 			TransportStatusChanged?.Invoke(this, status);
 		});
-		_backends = new IHardwareWalletBackend[] { _trezor }.ToDictionary(backend => backend.Vendor);
+		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network) }.ToDictionary(backend => backend.Vendor);
 	}
 
 	private readonly Network _network;
@@ -199,9 +199,11 @@ public class HardwareWalletService : IDisposable
 		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 		using var genCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
 
-		if (enableCoinjoin && _backends.GetValueOrDefault(device.Model.VendorOf()) is { } backend)
+		var vendor = device.Model.VendorOf();
+		if (enableCoinjoin && _backends.GetValueOrDefault(vendor) is { } backend
+			&& await backend.TryImportAsync(fingerprint, walletFilePath, enableCoinjoin: true, genCts.Token).ConfigureAwait(false) is { } fromDevice)
 		{
-			return await backend.ImportAsync(fingerprint, walletFilePath, enableCoinjoin: true, genCts.Token).ConfigureAwait(false);
+			return fromDevice;
 		}
 
 		var client = new HwiClient(_network);
@@ -209,6 +211,14 @@ public class HardwareWalletService : IDisposable
 		var segwitExtPubKey = await client.GetXpubAsync(device.Model, device.Path, segwitAccountKeyPath, genCts.Token).ConfigureAwait(false);
 		var keyManager = KeyManager.CreateNewHardwareWalletWatchOnly(fingerprint, segwitExtPubKey, null, null, null, _network, walletFilePath);
 		keyManager.SetIcon(device.WalletType);
+
+		// A vendor that signs from the wallet's ordinary accounts leaves no trace in the key path, so what
+		// signs this wallet has to be written down. Trezor is left alone: its account shape says so already.
+		if (enableCoinjoin && vendor is not (HardwareCoinJoinVendor.None or HardwareCoinJoinVendor.Trezor))
+		{
+			keyManager.CoinJoinVendor = vendor;
+		}
+
 		return keyManager;
 	}
 
@@ -218,12 +228,17 @@ public class HardwareWalletService : IDisposable
 	/// </summary>
 	public async Task<KeyManager> ImportConnectedAsync(string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken)
 	{
+		// A vendor with a transport of its own can find its device without HWI, which a headless host cannot
+		// drive for the accounts it needs. Ask each in turn; the others are found by enumerating below.
 		HardwareWalletException? lastError = null;
 		foreach (var backend in _backends.Values)
 		{
 			try
 			{
-				return await backend.ImportAsync(masterFingerprint: null, walletFilePath, enableCoinjoin, cancellationToken).ConfigureAwait(false);
+				if (await backend.TryImportAsync(masterFingerprint: null, walletFilePath, enableCoinjoin, cancellationToken).ConfigureAwait(false) is { } fromDevice)
+				{
+					return fromDevice;
+				}
 			}
 			catch (HardwareWalletException e)
 			{
@@ -232,7 +247,22 @@ public class HardwareWalletService : IDisposable
 			}
 		}
 
-		throw lastError ?? new HardwareWalletNotFoundException("No device that can be imported is connected.");
+		var detected = (await DetectAsync(cancellationToken).ConfigureAwait(false))
+			.Where(device => device.Fingerprint is not null && (!enableCoinjoin || CanSignCoinJoins(device)))
+			.ToArray();
+
+		if (detected.Length == 0)
+		{
+			throw lastError ?? new HardwareWalletNotFoundException("No device that can be imported is connected.");
+		}
+
+		if (detected.Length > 1)
+		{
+			// Picking one for the user could import the wrong wallet, which is not ours to guess at.
+			throw new HardwareWalletException("More than one device is connected. Leave only the one to import.");
+		}
+
+		return await ImportAsync(detected[0], walletFilePath, enableCoinjoin, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>
