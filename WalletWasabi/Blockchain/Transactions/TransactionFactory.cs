@@ -11,7 +11,6 @@ using WalletWasabi.Blockchain.TransactionOutputs;
 using WalletWasabi.Exceptions;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
-using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
 using WalletWasabi.Wallets.SilentPayment;
 using WalletWasabi.WebClients.PayJoin;
@@ -149,7 +148,7 @@ public class TransactionFactory
 		{
 			// Spending the SLIP-25 coinjoin account happens under an UnlockPath session on the device,
 			// which forbids own key paths outside that account: its change must return to it.
-			bool spendsCoinJoinAccountOnly = KeyManager.IsTrezorCoinJoinWallet()
+			bool spendsCoinJoinAccountOnly = KeyManager.UsesSlip25CoinJoinAccount()
 				&& allowedSmartCoinInputs.All(x => x.HdPubKey.FullKeyPath.IsSlip25KeyPath());
 
 			changeHdPubKey = spendsCoinJoinAccountOnly
@@ -333,7 +332,7 @@ public class TransactionFactory
 	/// </summary>
 	private List<SmartCoin> RestrictToSingleTrezorAccount(List<SmartCoin> allowedSmartCoinInputs, long totalAmount)
 	{
-		if (!KeyManager.IsTrezorCoinJoinWallet())
+		if (!KeyManager.UsesSlip25CoinJoinAccount())
 		{
 			return allowedSmartCoinInputs;
 		}

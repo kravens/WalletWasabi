@@ -197,14 +197,14 @@ public class TrezorProtocolTests
 			null,
 			null,
 			Network.Main);
-		Assert.False(keyManager.IsTrezorCoinJoinWallet());
+		Assert.False(keyManager.UsesSlip25CoinJoinAccount());
 		Assert.Null(keyManager.TaprootExtPubKey);
 
 		var coinJoinAccountKeyPath = TrezorDevice.GetCoinJoinAccountKeyPath(Network.Main);
 		var coinJoinExtPubKey = masterExtKey.Derive(coinJoinAccountKeyPath).Neuter();
 		keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, coinJoinExtPubKey);
 
-		Assert.True(keyManager.IsTrezorCoinJoinWallet());
+		Assert.True(keyManager.UsesSlip25CoinJoinAccount());
 		Assert.Equal(coinJoinExtPubKey, keyManager.TaprootExtPubKey);
 		Assert.Equal(coinJoinAccountKeyPath, keyManager.TaprootAccountKeyPath);
 
@@ -220,7 +220,7 @@ public class TrezorProtocolTests
 	{
 		// A hot wallet must not be treated as a Trezor coinjoin wallet and its change keys must still be segwit/taproot.
 		var keyManager = KeyManager.CreateNew(out _, "", Network.Main);
-		Assert.False(keyManager.IsTrezorCoinJoinWallet());
+		Assert.False(keyManager.UsesSlip25CoinJoinAccount());
 
 		var changeKey = keyManager.GetNextChangeKey();
 		Assert.True(changeKey.IsInternal);
@@ -252,7 +252,7 @@ public class TrezorProtocolTests
 			null,
 			Network.Main,
 			taprootAccountKeyPath: coinJoinAccountKeyPath);
-		Assert.True(trezorCoinJoinWallet.IsTrezorCoinJoinWallet());
+		Assert.True(trezorCoinJoinWallet.UsesSlip25CoinJoinAccount());
 
 		var plainHardwareWallet = KeyManager.CreateNewHardwareWalletWatchOnly(
 			masterExtKey.Neuter().PubKey.GetHDFingerPrint(),
@@ -261,7 +261,7 @@ public class TrezorProtocolTests
 			null,
 			null,
 			Network.Main);
-		Assert.False(plainHardwareWallet.IsTrezorCoinJoinWallet());
+		Assert.False(plainHardwareWallet.UsesSlip25CoinJoinAccount());
 	}
 
 	[Fact]
@@ -279,7 +279,7 @@ public class TrezorProtocolTests
 			null,
 			Network.Main,
 			taprootAccountKeyPath: coinJoinAccountKeyPath);
-		Assert.True(keyManager.IsTrezorCoinJoinWallet());
+		Assert.True(keyManager.UsesSlip25CoinJoinAccount());
 
 		var segwitKey = keyManager.GenerateNewKey(LabelsArray.Empty, KeyState.Clean, isInternal: false);
 		var slip25Key = keyManager.GetKeys(k => k.FullKeyPath.IsSlip25KeyPath()).First();

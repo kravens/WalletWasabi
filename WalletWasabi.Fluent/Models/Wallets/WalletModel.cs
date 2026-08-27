@@ -1,3 +1,4 @@
+using WalletWasabi.Blockchain.Keys;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -219,7 +220,9 @@ public partial class WalletModel : ReactiveObject, IWalletModel
 	// leave its screen unable to show where the money goes.
 	public bool SupportsCoinJoinPayments => !CoinJoinIsSignedByDevice;
 
-	public bool HasSeparateCoinJoinAccount => CoinJoinIsSignedByDevice;
+	// Asked about the account model, not the vendor: a device that signs from the wallet's default accounts
+	// under its own policy has no separate coinjoin account to keep apart.
+	public bool HasSeparateCoinJoinAccount => Wallet.KeyManager.UsesSlip25CoinJoinAccount();
 
 	// A hardware wallet with a free taproot slot can opt into coinjoin later by adding a coinjoin account.
 	public bool CanEnableCoinjoin => Wallet.KeyManager.IsHardwareWallet && !CoinJoinIsSignedByDevice && Wallet.KeyManager.TaprootExtPubKey is null;
