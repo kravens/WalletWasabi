@@ -46,7 +46,7 @@ internal class TrezorBackend : IHardwareWalletBackend
 	public bool SharesTransportWith(KeyManager keyManager) =>
 		keyManager.Icon is { } icon && Enum.TryParse<WalletType>(icon, ignoreCase: true, out var walletType) && walletType is WalletType.Trezor;
 
-	public async Task<KeyManager> ImportAsync(HDFingerprint? masterFingerprint, string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken)
+	public async Task<KeyManager?> TryImportAsync(HDFingerprint? masterFingerprint, string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken)
 	{
 		using var device = await AcquireAsync(masterFingerprint, cancellationToken).ConfigureAwait(false);
 		var fingerprint = masterFingerprint ?? await device.GetMasterFingerprintAsync(cancellationToken).ConfigureAwait(false);
