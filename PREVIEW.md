@@ -1,6 +1,6 @@
 # Wasabi Preview — hardware wallet coinjoin
 
-This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/WalletWasabi/WalletWasabi) from the `kravens` fork. It merges all of the hardware-wallet coinjoin work (Trezor, Coldcard, Passport Prime, Krux) into one build, based on the official **v2.8.1** release, so people can try it and give feedback before the work is split into reviewable upstream PRs.
+This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/WalletWasabi/WalletWasabi) from the `kravens` fork. It merges all of the hardware-wallet coinjoin work (Trezor, Coldcard, Passport Prime, Krux) into one build, rebased onto current upstream `master`, so people can try it and give feedback before the work is split into reviewable upstream PRs.
 
 **⚠️ This is experimental software.**
 
@@ -30,6 +30,19 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 - Requires a Krux device flashed with the coinjoin signing extension and the `kruxd` companion daemon running on the host (default port 21326).
 - The session policy and round budget are approved physically on the device; the wallet only connects to an already-authorized session.
 - There is no import UI yet: mark an imported watch-only hardware wallet as Krux-backed by setting `"CoinJoinVendor": 3` in its wallet JSON file.
+
+## What changed since Preview 1
+
+- **Current Trezor Suite works again.** Suite now ships a rewritten bridge that rejected the wire format Preview 1 used, so the wallet could not connect while Suite was running. It now detects which bridge is present and speaks the matching format. Verified on a Model T against Suite 26.8.2, and against a legacy standalone bridge.
+- **The daemon does the work, not the interface.** Every device operation goes through one service in the core with a backend per vendor, so `wassabeed` and the JSON-RPC API can do what the GUI can. `enumeratedevices` and the wallet status now report which vendor a device is.
+- **Your device's own limits are visible again**, named for what they mean rather than for the brand, and the settings screen now says plainly which limits your device enforces and which Wasabi does.
+- **A spent authorization is noticed before a round starts.** A Coldcard's HSM budget and a Krux's approved session both run out; previously the coinjoin would start and then fail at signing, which looks like a broken device rather than one doing its job.
+
+### If you tested Preview 1, read this
+
+Preview 1 stored the device round budget and the max mining fee rate under Trezor-specific names. Preview 2 renamed them and **does not migrate the old values**: on first start these two settings fall back to their defaults of **50 rounds** and **5 sat/vByte**.
+
+If you had set them *lower* than that, your device will be asked to authorize a **larger** budget than you originally chose. Open the coinjoin settings and set both back to what you want **before** authorizing anything. Every other setting, and your wallets themselves, carry over untouched.
 
 ## Feedback
 
