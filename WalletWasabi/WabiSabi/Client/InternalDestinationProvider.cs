@@ -2,7 +2,6 @@ using NBitcoin;
 using System.Linq;
 using System.Collections.Generic;
 using WalletWasabi.Blockchain.Keys;
-using WalletWasabi.Hwi.Trezor;
 
 namespace WalletWasabi.WabiSabi.Client;
 
@@ -13,7 +12,7 @@ public class InternalDestinationProvider : IDestinationProvider
 		_keyManager = keyManager;
 
 		// A Trezor coinjoin authorization is bound to the SLIP-25 taproot account, so all outputs must stay in it.
-		SupportedScriptTypes = _keyManager.IsTrezorCoinJoinWallet()
+		SupportedScriptTypes = _keyManager.UsesSlip25CoinJoinAccount()
 			? [ScriptType.Taproot]
 			: _keyManager.TaprootExtPubKey is not null
 				? [ScriptType.P2WPKH, ScriptType.Taproot]
@@ -25,7 +24,7 @@ public class InternalDestinationProvider : IDestinationProvider
 	public IEnumerable<IDestination> GetNextDestinations(int count, bool preferTaproot)
 	{
 		// A Trezor coinjoin wallet can only sign outputs of the SLIP-25 taproot account, so it never uses segwit destinations.
-		bool taprootOnly = _keyManager.IsTrezorCoinJoinWallet();
+		bool taprootOnly = _keyManager.UsesSlip25CoinJoinAccount();
 
 		// Get all locked internal keys we have and assert we have enough.
 		_keyManager.AssertLockedInternalKeysIndexedAndPersist(count, preferTaproot || taprootOnly);
