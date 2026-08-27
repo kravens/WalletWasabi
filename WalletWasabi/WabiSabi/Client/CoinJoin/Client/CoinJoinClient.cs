@@ -140,6 +140,21 @@ public class CoinJoinClient
 					Logger.LogInfo(FormatLog(roundSkippedMessage, currentRoundState));
 					throw new CoinJoinClientException(CoinjoinError.MiningFeeRateTooHigh, roundSkippedMessage);
 				}
+				if (_keyChain.MinRoundInputs is { } signerFloor && signerFloor > roundParameters.MaxInputCountByRound)
+				{
+					// The signer will refuse a round this small, and no amount of waiting changes that: the
+					// coordinator caps every round below the floor the device was given. Registering anyway
+					// would spend the round budget on refusals and look like a broken device, so say plainly
+					// which of the two numbers has to move.
+					string floorMessage =
+						$"This coordinator builds rounds of at most {roundParameters.MaxInputCountByRound} inputs, "
+						+ $"but the signing device requires at least {signerFloor}, so it would refuse to sign. "
+						+ "Lower the minimum input count in the coinjoin settings, or use a coordinator that "
+						+ "builds larger rounds.";
+					Logger.LogInfo(FormatLog(floorMessage, currentRoundState));
+					throw new CoinJoinClientException(CoinjoinError.MinInputCountTooLow, floorMessage);
+				}
+
 				if (roundParameters.MinInputCountByRound < _coinJoinConfiguration.AbsoluteMinInputCount)
 				{
 					string roundSkippedMessage = $"Min input count for the round was {roundParameters.MinInputCountByRound} but min allowed is {_coinJoinConfiguration.AbsoluteMinInputCount}.";
@@ -154,6 +169,7 @@ public class CoinJoinClient
 			var utxoSelectionParameters = UtxoSelectionParameters.FromRoundParameters(roundParameters, _outputProvider.DestinationProvider.SupportedScriptTypes.ToArray());
 
 			myCoins = _coinJoinCoinSelector.SelectCoinsForRound(coinCandidates, utxoSelectionParameters, liquidityClue);
+			myCoins = DropCoinsTheSignerWouldNotSign(myCoins, currentRoundState);
 
 			if (!roundParameters.AllowedInputTypes.Contains(ScriptType.P2WPKH) || !roundParameters.AllowedOutputTypes.Contains(ScriptType.P2WPKH))
 			{
@@ -586,6 +602,26 @@ public class CoinJoinClient
 				.All(x => x >= Money.Zero);
 
 		return AllExpectedScriptsArePresent() && AllOutputsHaveAtLeastTheExpectedValue();
+	}
+
+	/// <summary>
+	/// Leaves out coins this signer cannot produce a signature for. A device handed such an input does not
+	/// necessarily complain - it can return a PSBT with nothing filled in - so the round would be joined and
+	/// then failed at signing, spending a round of the device's budget on it.
+	/// </summary>
+	private ImmutableList<SmartCoin> DropCoinsTheSignerWouldNotSign(ImmutableList<SmartCoin> selected, RoundState roundState)
+	{
+		var unsignable = selected.Where(coin => !_keyChain.CanSign(coin.ScriptType)).ToList();
+		if (unsignable.Count == 0)
+		{
+			return selected;
+		}
+
+		Logger.LogWarning(FormatLog(
+			$"Dropping {unsignable.Count} coin(s) the signer cannot sign: "
+			+ string.Join(", ", unsignable.Select(coin => coin.ScriptType).Distinct()) + ".", roundState));
+
+		return selected.RemoveRange(unsignable);
 	}
 
 	private async Task SignTransactionAsync(
