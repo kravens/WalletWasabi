@@ -334,7 +334,9 @@ public class Wallet : BackgroundService
 		await WalletFilterProcessor.StopAsync(cancel).ConfigureAwait(false);
 		WalletFilterProcessor.Dispose();
 
-		(KeyChain as TrezorKeyChain)?.Dispose();
+		// Every hardware key chain holds a device open - a bridge session, a USB handle, a daemon connection -
+		// so this must not name one vendor. It did, and the other three leaked their device on every stop.
+		(KeyChain as IDisposable)?.Dispose();
 
 		// Hand the device back, so that adding another wallet can enumerate it again.
 		_hardwareWallets.Release(KeyManager);

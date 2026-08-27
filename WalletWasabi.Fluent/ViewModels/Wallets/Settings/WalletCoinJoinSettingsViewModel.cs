@@ -44,6 +44,8 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _devicePolicyMaxTransactionsPerPeriod;
 	[AutoNotify] private string _devicePolicyMinRoundInputs;
 	[AutoNotify] private bool _devicePolicyOutOfSync;
+	[AutoNotify] private string _devicePolicySummary = "";
+	[AutoNotify] private string _devicePolicyHash = "";
 	[AutoNotify] private bool _isOutputWalletSelectionEnabled = true;
 	[AutoNotify] private IWalletModel _selectedOutputWallet;
 	[AutoNotify] private ReadOnlyObservableCollection<IWalletModel> _wallets = ReadOnlyObservableCollection<IWalletModel>.Empty;
@@ -64,6 +66,14 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_devicePolicyMaxTransactionsPerPeriod = _wallet.Settings.DevicePolicyMaxTransactionsPerPeriod.ToString(CultureInfo.InvariantCulture);
 		_devicePolicyMinRoundInputs = _wallet.Settings.DevicePolicyMinRoundInputs.ToString(CultureInfo.InvariantCulture);
 		_devicePolicyOutOfSync = _wallet.Settings.IsDevicePolicyOutOfSync;
+
+		// What the device says it is enforcing, as opposed to what is configured above. Only populated once a
+		// policy has been accepted, so it stays hidden until there is something real to show.
+		if (_wallet.Coinjoin is { } coinjoin)
+		{
+			coinjoin.WhenAnyValue(x => x.DevicePolicySummary).BindTo(this, x => x.DevicePolicySummary);
+			coinjoin.WhenAnyValue(x => x.DevicePolicyHash).BindTo(this, x => x.DevicePolicyHash);
+		}
 		HasDevicePolicyLimits = _wallet.Settings.HasDevicePolicyLimits;
 		CoinJoinLimitsEnforcedBy = _wallet.Settings.CoinJoinLimitsEnforcedBy;
 		_deviceMaxMiningFeeRate = _wallet.Settings.CoinJoinDeviceMaxMiningFeeRate.ToString(System.Globalization.CultureInfo.InvariantCulture);

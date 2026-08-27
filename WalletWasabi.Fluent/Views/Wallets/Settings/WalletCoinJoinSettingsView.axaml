@@ -135,6 +135,16 @@
       <TextBox Classes="standalone" Text="{Binding DevicePolicyMinRoundInputs}" DockPanel.Dock="Right" Watermark="0 to 500" MaxLength="3" />
     </DockPanel>
 
+    <StackPanel IsVisible="{Binding DevicePolicySummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                Spacing="4">
+      <TextBlock Text="What the device reports it is enforcing" Classes="h9" Opacity="0.6" />
+      <TextBlock Text="{Binding DevicePolicySummary}" TextWrapping="Wrap" Opacity="0.75" />
+      <DockPanel IsVisible="{Binding DevicePolicyHash, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <TextBlock Text="Policy hash" Opacity="0.6" />
+        <SelectableTextBlock Text="{Binding DevicePolicyHash}" DockPanel.Dock="Right" Opacity="0.75" />
+      </DockPanel>
+    </StackPanel>
+
     <TextBlock IsVisible="{Binding DevicePolicyOutOfSync}"
                Classes="h9"
                TextWrapping="Wrap"
