@@ -86,7 +86,7 @@ public partial class WalletSettingsModel : ReactiveObject
 	public WalletType WalletType { get; }
 
 	/// <summary>See <see cref="IWalletModel.HasSeparateCoinJoinAccount"/>.</summary>
-	public bool HasSeparateCoinJoinAccount => HardwareWalletService.IsRemoteSigner(_keyManager);
+	public bool HasSeparateCoinJoinAccount => _keyManager.UsesSlip25CoinJoinAccount();
 
 	public bool IsCoinJoinPaused { get; set; }
 
