@@ -19,6 +19,10 @@ namespace WalletWasabi.Wallets;
 /// <see cref="HardwareCoinJoinVendor"/>, an entry in <c>VendorOf</c>, one class here, and an
 /// <see cref="IKeyChain"/>.
 /// </summary>
+/// <summary>What a device reports about the policy it is running, in its own words plus the hash that
+/// identifies it.</summary>
+public record DevicePolicyReport(string Summary, string PolicyHash);
+
 internal interface IHardwareWalletBackend : IDisposable
 {
 	HardwareCoinJoinVendor Vendor { get; }
@@ -52,6 +56,14 @@ internal interface IHardwareWalletBackend : IDisposable
 	/// <summary>Shows and verifies an address over the vendor's transport; false means HWI should do it.</summary>
 	Task<bool> TryDisplayAddressAsync(KeyManager keyManager, KeyPath fullKeyPath, BitcoinAddress expectedAddress, CancellationToken cancellationToken) =>
 		Task.FromResult(false);
+
+	/// <summary>
+	/// What the device says it is currently enforcing, read back from the device itself rather than from
+	/// what we believe we sent it - which is the only way a user can check the limits are the agreed ones.
+	/// Null when the vendor has no policy to describe.
+	/// </summary>
+	Task<DevicePolicyReport?> GetDevicePolicyAsync(IKeyChain keyChain, CancellationToken cancellationToken) =>
+		Task.FromResult<DevicePolicyReport?>(null);
 
 	/// <summary>Whether a device of this vendor can currently be reached at all.</summary>
 	Task<bool> IsTransportAvailableAsync(CancellationToken cancellationToken) => Task.FromResult(true);

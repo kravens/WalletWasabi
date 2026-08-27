@@ -137,6 +137,36 @@ internal class ColdcardBackend : IHardwareWalletBackend
 		}
 	}
 
+	/// <summary>
+	/// Asks the device what policy it ended up with. Best effort: failing to read it must not undo an
+	/// authorization that already succeeded, so a device that will not answer reports nothing.
+	/// </summary>
+	public Task<DevicePolicyReport?> GetDevicePolicyAsync(IKeyChain keyChain, CancellationToken cancellationToken)
+	{
+		if (keyChain is not ColdcardKeyChain coldcard)
+		{
+			return Task.FromResult<DevicePolicyReport?>(null);
+		}
+
+		try
+		{
+			var status = coldcard.Device.GetHsmStatus();
+			// A device with nothing to say about its policy is the same as a vendor that cannot: report nothing
+			// rather than an empty summary the interface would then show as a blank panel.
+			if (status.Summary is not { Length: > 0 } summary)
+			{
+				return Task.FromResult<DevicePolicyReport?>(null);
+			}
+
+			return Task.FromResult<DevicePolicyReport?>(new DevicePolicyReport(summary, status.PolicyHash ?? ""));
+		}
+		catch (Exception e)
+		{
+			Logger.LogDebug($"Could not read the device's active policy: {e.Message}");
+			return Task.FromResult<DevicePolicyReport?>(null);
+		}
+	}
+
 	/// <summary>A device that has been unplugged answers nothing; its session cannot be reused.</summary>
 	private static bool IsDeviceAlive(ColdcardKeyChain keyChain)
 	{
