@@ -23,9 +23,14 @@ internal interface IHardwareWalletBackend : IDisposable
 {
 	HardwareCoinJoinVendor Vendor { get; }
 
-	/// <summary>Reads the wallet's accounts from a connected device over the vendor's own transport.</summary>
+	/// <summary>
+	/// Reads the wallet's accounts over the vendor's own transport, for a vendor that keeps something HWI
+	/// cannot see. Returns null when HWI's own import is enough, which is the usual case: a vendor that
+	/// signs from the wallet's ordinary accounts has nothing extra to read.
+	/// </summary>
 	/// <param name="masterFingerprint">Which device to use, or null to take the one that is connected.</param>
-	Task<KeyManager> ImportAsync(HDFingerprint? masterFingerprint, string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken);
+	Task<KeyManager?> TryImportAsync(HDFingerprint? masterFingerprint, string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken) =>
+		Task.FromResult<KeyManager?>(null);
 
 	/// <summary>Asks the device to authorize a batch of coinjoin rounds and returns the key chain that signs them.</summary>
 	/// <param name="existingKeyChain">The wallet's current key chain, reused when it already holds the device.</param>

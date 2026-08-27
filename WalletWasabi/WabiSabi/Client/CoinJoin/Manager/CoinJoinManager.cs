@@ -284,7 +284,8 @@ public class CoinJoinManager : BackgroundService
 
 	/// <summary>Whether this wallet still owes its signing device an authorization before it can coinjoin.</summary>
 	public static bool NeedsDeviceAuthorization(Wallet wallet) =>
-		HardwareWalletService.IsRemoteSigner(wallet.KeyManager) && wallet.KeyChain is null;
+		HardwareWalletService.IsRemoteSigner(wallet.KeyManager)
+		&& wallet.KeyChain is null or { NeedsReauthorization: true };
 
 	/// <summary>
 	/// Asks the signing device to authorize a batch of coinjoin rounds, which is also what gives the wallet
@@ -307,6 +308,20 @@ public class CoinJoinManager : BackgroundService
 				CoinjoinError.MiningFeeRateTooHigh,
 				$"Every round of this coordinator currently pays more than the authorized {authorizedFeeCap.SatoshiPerByte} sat/vByte, "
 				+ "so the signing device would refuse all of them. Raise the fee limit in the coinjoin settings or wait for lower fees.");
+		}
+
+		if (wallet.KeyManager.CoinJoinMinRoundInputs is { } signerFloor)
+		{
+			var roundsBigEnough = knownRounds.Count == 0
+				|| knownRounds.Any(r => r.CoinjoinState.Parameters.MaxInputCountByRound >= signerFloor);
+			if (!roundsBigEnough)
+			{
+				throw new CoinJoinClientException(
+					CoinjoinError.MinInputCountTooLow,
+					$"This coordinator builds rounds smaller than the {signerFloor} inputs the signing device "
+					+ "requires, so it would refuse every one of them. Lower the minimum input count in the "
+					+ "coinjoin settings, or use a coordinator that builds larger rounds.");
+			}
 		}
 
 		using var authCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

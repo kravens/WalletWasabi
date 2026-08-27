@@ -13,6 +13,7 @@ using WalletWasabi.CoinJoinProfiles;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Io;
 using WalletWasabi.Models;
 using WalletWasabi.Serialization;
@@ -168,6 +169,38 @@ public class KeyManager
 
 	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal CoinJoinDeviceMaxMiningFeeRate { get; set; } = DefaultCoinJoinDeviceMaxMiningFeeRate;
+
+	public long ColdcardMaxSatsLeaving { get; set; } = ColdcardHsmPolicy.DefaultMaxSatsLeaving;
+
+	public int ColdcardMaxTransactionsPerPeriod { get; set; } = ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod;
+
+	public int ColdcardPeriodMinutes { get; set; } = ColdcardHsmPolicy.DefaultPeriodMinutes;
+
+	/// <summary>Fewest inputs a round transaction may have before the device will sign it, counting every
+	/// participant. 0 turns the device-side floor off and leaves only Wasabi's own minimum input count, which
+	/// a compromised host can ignore.</summary>
+	public int ColdcardMinInputs { get; set; } = ColdcardHsmPolicy.DefaultMinInputs;
+
+	/// <summary>The signer's own minimum round size, whatever the vendor, or null when it has no such rule.
+	/// Lets the coinjoin flow check a coordinator can build rounds that big without knowing which device is
+	/// attached - the same shape as <c>IKeyChain.MinRoundInputs</c>, but readable before a key chain exists,
+	/// which is when authorization has to decide whether it is worth asking the user to approve anything.</summary>
+	public int? CoinJoinMinRoundInputs => this.GetCoinJoinVendor() switch
+	{
+		HardwareCoinJoinVendor.Coldcard => ColdcardMinInputs > 0 ? ColdcardMinInputs : null,
+		_ => null,
+	};
+
+	/// <summary>Hash of the HSM policy this wallet last installed and the user approved on the device.
+	/// Kept so a later session can ask the device what it is running and compare, which is the end-to-end
+	/// check that the limits being enforced are the ones that were agreed to.</summary>
+	public string? ColdcardActivePolicyHash { get; set; }
+
+	/// <summary>Hash of the policy JSON this wallet composed when that device policy was approved. Paired
+	/// with <see cref="ColdcardActivePolicyHash"/>: the device hash says what is being enforced, this says
+	/// which settings produced it, and a difference means the limits were edited while the device stayed
+	/// locked into the previous ones.</summary>
+	public string? ColdcardApprovedPolicyFingerprint { get; set; }
 
 	/// <summary>Which hardware vendor signs this wallet's coinjoins. Vendors that keep coinjoin funds in the
 	/// wallet's default accounts cannot be recognised from a key path the way a SLIP-25 account can, so the
@@ -792,6 +825,12 @@ public class KeyManager
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
 			("CoinJoinDeviceMaxRounds", Encode.Int(keyManager.CoinJoinDeviceMaxRounds)),
 			("CoinJoinDeviceMaxMiningFeeRate", Encode.Decimal(keyManager.CoinJoinDeviceMaxMiningFeeRate)),
+			("ColdcardMaxSatsLeaving", Encode.Int64(keyManager.ColdcardMaxSatsLeaving)),
+			("ColdcardMaxTransactionsPerPeriod", Encode.Int(keyManager.ColdcardMaxTransactionsPerPeriod)),
+			("ColdcardPeriodMinutes", Encode.Int(keyManager.ColdcardPeriodMinutes)),
+			("ColdcardMinInputs", Encode.Int(keyManager.ColdcardMinInputs)),
+			("ColdcardActivePolicyHash", Encode.String(keyManager.ColdcardActivePolicyHash ?? "")),
+			("ColdcardApprovedPolicyFingerprint", Encode.String(keyManager.ColdcardApprovedPolicyFingerprint ?? "")),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
 			("CoinJoinDisabled", Encode.Bool(keyManager.CoinJoinDisabled)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
@@ -834,6 +873,12 @@ public class KeyManager
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
 				CoinJoinDeviceMaxRounds = get.Optional("CoinJoinDeviceMaxRounds", Decode.Int, DefaultCoinJoinDeviceMaxRounds),
 				CoinJoinDeviceMaxMiningFeeRate = get.Optional("CoinJoinDeviceMaxMiningFeeRate", Decode.Decimal, DefaultCoinJoinDeviceMaxMiningFeeRate),
+				ColdcardMaxSatsLeaving = get.Optional("ColdcardMaxSatsLeaving", Decode.Int64, ColdcardHsmPolicy.DefaultMaxSatsLeaving),
+				ColdcardMaxTransactionsPerPeriod = get.Optional("ColdcardMaxTransactionsPerPeriod", Decode.Int, ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod),
+				ColdcardPeriodMinutes = get.Optional("ColdcardPeriodMinutes", Decode.Int, ColdcardHsmPolicy.DefaultPeriodMinutes),
+				ColdcardMinInputs = get.Optional("ColdcardMinInputs", Decode.Int, ColdcardHsmPolicy.DefaultMinInputs),
+				ColdcardActivePolicyHash = get.Optional("ColdcardActivePolicyHash", Decode.String) is { Length: > 0 } activeHash ? activeHash : null,
+				ColdcardApprovedPolicyFingerprint = get.Optional("ColdcardApprovedPolicyFingerprint", Decode.String) is { Length: > 0 } approvedHash ? approvedHash : null,
 				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
 				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
 					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),
