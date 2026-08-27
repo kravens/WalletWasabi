@@ -37,7 +37,7 @@ public class HardwareWalletService : IDisposable
 			_transportStatus = status;
 			TransportStatusChanged?.Invoke(this, status);
 		});
-		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network) }.ToDictionary(backend => backend.Vendor);
+		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network), new PassportBackend(network), new KruxBackend() }.ToDictionary(backend => backend.Vendor);
 	}
 
 	private readonly Network _network;
