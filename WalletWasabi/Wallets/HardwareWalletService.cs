@@ -441,6 +441,20 @@ public class HardwareWalletService : IDisposable
 			.ConfigureAwait(false);
 	}
 
+	/// <summary>
+	/// What this wallet's device reports it is enforcing, or null when the vendor has nothing to report or
+	/// the device would not answer. Read from the device, so it can be compared with what we asked for.
+	/// </summary>
+	public async Task<DevicePolicyReport?> GetDevicePolicyAsync(KeyManager keyManager, IKeyChain? keyChain, CancellationToken cancellationToken)
+	{
+		if (keyChain is null || BackendFor(keyManager) is not { } backend)
+		{
+			return null;
+		}
+
+		return await backend.GetDevicePolicyAsync(keyChain, cancellationToken).ConfigureAwait(false);
+	}
+
 	/// <summary>Makes sure the device of this wallet can be reached, if it needs a transport of ours at all.</summary>
 	public async Task EnsureReadyAsync(KeyManager keyManager, CancellationToken cancellationToken)
 	{
