@@ -165,14 +165,14 @@ public class TrezorProtocolTests
 	{
 		// A plain segwit-only Trezor watch-only wallet (no taproot account), like one imported without coinjoin.
 		var keyManager = TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: false);
-		Assert.False(keyManager.IsTrezorCoinJoinWallet());
+		Assert.False(keyManager.UsesSlip25CoinJoinAccount());
 		Assert.Null(keyManager.TaprootExtPubKey);
 
 		var coinJoinAccountKeyPath = TrezorDevice.GetCoinJoinAccountKeyPath(Network.Main);
 		var coinJoinExtPubKey = TestKeyManagers.MasterKey.Derive(coinJoinAccountKeyPath).Neuter();
 		keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, coinJoinExtPubKey);
 
-		Assert.True(keyManager.IsTrezorCoinJoinWallet());
+		Assert.True(keyManager.UsesSlip25CoinJoinAccount());
 		Assert.Equal(coinJoinExtPubKey, keyManager.TaprootExtPubKey);
 		Assert.Equal(coinJoinAccountKeyPath, keyManager.TaprootAccountKeyPath);
 
@@ -188,7 +188,7 @@ public class TrezorProtocolTests
 	{
 		// A hot wallet must not be treated as a Trezor coinjoin wallet and its change keys must still be segwit/taproot.
 		var keyManager = KeyManager.CreateNew(out _, "", Network.Main);
-		Assert.False(keyManager.IsTrezorCoinJoinWallet());
+		Assert.False(keyManager.UsesSlip25CoinJoinAccount());
 
 		var changeKey = keyManager.GetNextChangeKey();
 		Assert.True(changeKey.IsInternal);

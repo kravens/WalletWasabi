@@ -38,7 +38,7 @@ public class HardwareWalletService : IDisposable
 		TrezorDevice.IsBridgeAvailableAsync(cancellationToken);
 
 	/// <summary>Whether this wallet's coinjoins are signed by a device rather than by keys we hold.</summary>
-	public static bool IsRemoteSigner(KeyManager keyManager) => keyManager.IsTrezorCoinJoinWallet();
+	public static bool IsRemoteSigner(KeyManager keyManager) => keyManager.IsHardwareCoinJoinWallet();
 
 	/// <summary>Most coinjoin rounds one device authorization may cover; the firmware refuses more under its own safety checks.</summary>
 	public const int MaxAuthorizationRounds = 500;

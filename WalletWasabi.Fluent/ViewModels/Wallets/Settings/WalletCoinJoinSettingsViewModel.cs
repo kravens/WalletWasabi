@@ -51,7 +51,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_plebStopThreshold = _wallet.Settings.PlebStopThreshold.ToString();
 		_anonScoreTarget = _wallet.Settings.AnonScoreTarget.ToString();
 		_nonPrivateCoinIsolation = _wallet.Settings.NonPrivateCoinIsolation;
-		HasDeviceAuthorizationLimits = _wallet.HasSeparateCoinJoinAccount;
+		HasDeviceAuthorizationLimits = _wallet.CoinJoinNeedsDeviceAuthorization;
 		_deviceMaxRounds = _wallet.Settings.CoinJoinDeviceMaxRounds.ToString();
 		_deviceMaxMiningFeeRate = _wallet.Settings.CoinJoinDeviceMaxMiningFeeRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
 

@@ -1,3 +1,4 @@
+using WalletWasabi.Blockchain.Keys;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -70,12 +71,14 @@ public partial interface IWalletModel : INotifyPropertyChanged
 	/// <summary>Whether this wallet can coinjoin at all: a watch-only wallet can, if a device signs for it.</summary>
 	bool CanCoinJoin { get; }
 
-	/// <summary>
-	/// Whether coinjoin funds live in an account of their own, which only coinjoins can spend. Deposits meant
-	/// for coinjoin have to land in it, and its change cannot go anywhere else. The device has to authorize a
-	/// batch of rounds before coinjoining can start, and no payment can be made inside a coinjoin round.
-	/// </summary>
+	/// <summary>Whether coinjoin funds live in a SLIP-25 account of their own, which only coinjoins can spend; deposits for coinjoin must land in it and its change stays in it.</summary>
 	bool HasSeparateCoinJoinAccount { get; }
+
+	/// <summary>Whether a device has to authorize a batch of rounds before coinjoining can start.</summary>
+	bool CoinJoinNeedsDeviceAuthorization { get; }
+
+	/// <summary>Whether a payment can be made inside a coinjoin round; a device signer cannot show where it goes.</summary>
+	bool SupportsCoinJoinPayments { get; }
 
 	bool CanEnableCoinjoin { get; }
 
@@ -208,7 +211,15 @@ public partial class WalletModel : ReactiveObject, IWalletModel
 
 	public bool CanCoinJoin => !IsWatchOnlyWallet || CoinJoinIsSignedByDevice;
 
-	public bool HasSeparateCoinJoinAccount => CoinJoinIsSignedByDevice;
+	public bool CoinJoinNeedsDeviceAuthorization => CoinJoinIsSignedByDevice;
+
+	// The device approves a budget for a round, never a destination, so a payment inside a coinjoin would
+	// leave its screen unable to show where the money goes.
+	public bool SupportsCoinJoinPayments => !CoinJoinIsSignedByDevice;
+
+	// Asked about the account model, not the vendor: a device that signs from the wallet's default accounts
+	// under its own policy has no separate coinjoin account to keep apart.
+	public bool HasSeparateCoinJoinAccount => Wallet.KeyManager.UsesSlip25CoinJoinAccount();
 
 	// A hardware wallet with a free taproot slot can opt into coinjoin later by adding a coinjoin account.
 	public bool CanEnableCoinjoin => Wallet.KeyManager.IsHardwareWallet && !CoinJoinIsSignedByDevice && Wallet.KeyManager.TaprootExtPubKey is null;

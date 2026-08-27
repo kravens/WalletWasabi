@@ -16,7 +16,6 @@ using WalletWasabi.Crypto.Randomness;
 using WalletWasabi.Extensions;
 using WalletWasabi.FeeRateEstimation;
 using WalletWasabi.Helpers;
-using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Logging;
 using WalletWasabi.Models;
 using WalletWasabi.Services;
@@ -132,7 +131,7 @@ public class Wallet : BackgroundService
 	public bool IsWalletPrivate() => GetPrivacyPercentage() >= 100;
 
 	// Trezor coinjoin authorizations are bound to the SLIP-25 taproot account, so only its coins can take part in rounds.
-	public IEnumerable<SmartCoin> GetCoinjoinCoinCandidates() => KeyManager.IsTrezorCoinJoinWallet()
+	public IEnumerable<SmartCoin> GetCoinjoinCoinCandidates() => KeyManager.UsesSlip25CoinJoinAccount()
 		? Coins.Where(coin => coin.ScriptType is ScriptType.Taproot)
 		: Coins;
 

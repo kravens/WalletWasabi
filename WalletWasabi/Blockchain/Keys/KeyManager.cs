@@ -10,7 +10,7 @@ using System.Text.Json.Nodes;
 using WalletWasabi.Blockchain.Analysis.Clustering;
 using WalletWasabi.Blockchain.BlockFilters;
 using WalletWasabi.CoinJoinProfiles;
-using WalletWasabi.Hwi.Trezor;
+using WalletWasabi.Hwi;
 using WalletWasabi.Io;
 using WalletWasabi.Models;
 using WalletWasabi.Serialization;
@@ -166,6 +166,19 @@ public class KeyManager
 
 	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal CoinJoinDeviceMaxMiningFeeRate { get; set; } = DefaultCoinJoinDeviceMaxMiningFeeRate;
+
+	/// <summary>Which hardware vendor signs this wallet's coinjoins. Vendors that keep coinjoin funds in the
+	/// wallet's default accounts cannot be recognised from a key path the way a SLIP-25 account can, so the
+	/// vendor is recorded explicitly at import. Left at <see cref="HardwareCoinJoinVendor.None"/> for a
+	/// Trezor, which is still inferred from its account shape so wallets imported before this field keep
+	/// working.</summary>
+	public HardwareCoinJoinVendor CoinJoinVendor { get; set; }
+
+	/// <summary>Turned off by the user after it was enabled. Coinjoin on a hardware wallet is opt-in, and
+	/// opting back out has to be said explicitly: <see cref="CoinJoinVendor"/> cannot express it, because
+	/// None also means "never set", and a SLIP-25 wallet is recognised by its account whatever that field
+	/// says.</summary>
+	public bool CoinJoinDisabled { get; set; }
 
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
@@ -393,7 +406,7 @@ public class KeyManager
 			x.IsInternal &&
 			(coinJoinAccount
 				? x.FullKeyPath.IsSlip25KeyPath()
-				: MatchesChangeScriptPubKeyType(x) && !(this.IsTrezorCoinJoinWallet() && x.FullKeyPath.IsSlip25KeyPath())))
+				: MatchesChangeScriptPubKeyType(x) && !(this.UsesSlip25CoinJoinAccount() && x.FullKeyPath.IsSlip25KeyPath())))
 			.First();
 
 	public ImmutableArray<HdPubKey> GetNextCoinJoinKeys() =>
@@ -766,6 +779,8 @@ public class KeyManager
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
 			("CoinJoinDeviceMaxRounds", Encode.Int(keyManager.CoinJoinDeviceMaxRounds)),
 			("CoinJoinDeviceMaxMiningFeeRate", Encode.Decimal(keyManager.CoinJoinDeviceMaxMiningFeeRate)),
+			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
+			("CoinJoinDisabled", Encode.Bool(keyManager.CoinJoinDisabled)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
 			("ChangeScriptPubKeyType", Encode.PreferredScriptPubKeyType(keyManager.ChangeScriptPubKeyType)),
@@ -806,6 +821,10 @@ public class KeyManager
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
 				CoinJoinDeviceMaxRounds = get.Optional("CoinJoinDeviceMaxRounds", Decode.Int, DefaultCoinJoinDeviceMaxRounds),
 				CoinJoinDeviceMaxMiningFeeRate = get.Optional("CoinJoinDeviceMaxMiningFeeRate", Decode.Decimal, DefaultCoinJoinDeviceMaxMiningFeeRate),
+				// "IsColdcardCoinjoin" is what the field was called before other vendors existed.
+				CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
+					get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0),
+				CoinJoinDisabled = get.Optional("CoinJoinDisabled", Decode.Bool, false),
 				NonPrivateCoinIsolation = get.Optional("RedCoinIsolation", Decode.Bool, false),
 				DefaultReceiveScriptType = get.Optional("DefaultReceiveScriptType", Decode.ScriptPubKeyType, ScriptPubKeyType.TaprootBIP86),
 				ChangeScriptPubKeyType = get.Optional("ChangeScriptPubKeyType", Decode.PreferredScriptPubKeyType) ?? PreferredScriptPubKeyType.Unspecified.Instance,

@@ -3,7 +3,6 @@ using NBitcoin.Policy;
 using WalletWasabi.Blockchain.Analysis.Clustering;
 using WalletWasabi.Blockchain.TransactionBuilding;
 using WalletWasabi.Exceptions;
-using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Wallets.SilentPayment;
 using WalletWasabi.WebClients.PayJoin;
 
@@ -138,7 +137,7 @@ public class TransactionFactory
 		}
 		else
 		{
-			bool spendsCoinJoinAccountOnly = KeyManager.IsTrezorCoinJoinWallet()
+			bool spendsCoinJoinAccountOnly = KeyManager.UsesSlip25CoinJoinAccount()
 				&& allowedSmartCoinInputs.All(x => x.HdPubKey.FullKeyPath.IsSlip25KeyPath());
 			changeHdPubKey = KeyManager.GetNextChangeKey(coinJoinAccount: spendsCoinJoinAccountOnly);
 
@@ -318,7 +317,7 @@ public class TransactionFactory
 	/// </summary>
 	private List<SmartCoin> RestrictToSingleTrezorAccount(List<SmartCoin> allowedSmartCoinInputs, long totalAmount)
 	{
-		if (!KeyManager.IsTrezorCoinJoinWallet())
+		if (!KeyManager.UsesSlip25CoinJoinAccount())
 		{
 			return allowedSmartCoinInputs;
 		}
