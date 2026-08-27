@@ -8,6 +8,7 @@ using WalletWasabi.Blockchain.Keys;
 using WalletWasabi.Blockchain.TransactionOutputs;
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Models;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Wallets.Backends;
@@ -137,6 +138,59 @@ public class HardwareWalletService : IDisposable
 		{
 			throw new ArgumentOutOfRangeException(nameof(maxMiningFeeRate), maxMiningFeeRate, feeRateError);
 		}
+	}
+
+	/// <summary>
+	/// Whether this wallet's device enforces limits of its own beyond the round budget - how much value may
+	/// leave, how often, how large a round must be. Only a device running a policy has them.
+	/// </summary>
+	public static bool HasDevicePolicyLimits(KeyManager keyManager) =>
+		keyManager.GetCoinJoinVendor() is HardwareCoinJoinVendor.Coldcard;
+
+	/// <summary>
+	/// Whether the wallet's saved limits differ from the policy its device is actually enforcing. A device
+	/// policy cannot be changed while it runs - deliberately, since a host that could end it could also drop
+	/// every limit - so a value edited afterwards is saved and simply not applied until the device restarts.
+	/// False before any policy has been approved, when there is nothing to disagree with.
+	/// </summary>
+	public static bool IsDevicePolicyOutOfSync(KeyManager keyManager) =>
+		HasDevicePolicyLimits(keyManager)
+		&& keyManager.ColdcardApprovedPolicyFingerprint is { Length: > 0 } approved
+		&& approved != ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.ComposeFor(keyManager));
+
+	/// <summary>
+	/// Which of the coinjoin limits this wallet's device enforces and which Wasabi does, in words a person
+	/// can act on. Vendors differ and must not be misrepresented: a device that shows the round budget and
+	/// the fee cap on its screen enforces them itself, while a device policy may have no concept of either,
+	/// leaving Wasabi to enforce them while the device only bounds how much value can leave at once.
+	/// Telling a user their device confirms limits it never sees would be a false claim.
+	/// </summary>
+	public static string DescribeLimitEnforcement(KeyManager keyManager) =>
+		keyManager.GetCoinJoinVendor() switch
+		{
+			HardwareCoinJoinVendor.Trezor => "Shown on the device and confirmed there; the device enforces both.",
+			HardwareCoinJoinVendor.Coldcard =>
+				"The fee-rate cap is enforced by Wasabi - the device policy has no concept of one. The limits "
+				+ "below it are enforced by the device: how much of your value may leave in a single "
+				+ "transaction, and how many transactions it will sign in total and per period.",
+			HardwareCoinJoinVendor.None => "",
+			_ => "Enforced by Wasabi for this device.",
+		};
+
+	/// <summary>
+	/// The limits a device policy enforces, named for what they mean rather than for the vendor that stores
+	/// them, so a front end can show and edit them without knowing whose policy it is.
+	/// </summary>
+	public record DevicePolicyLimits(long MaxSatsLeaving, int MaxTransactionsPerPeriod, int MinRoundInputs);
+
+	public static DevicePolicyLimits GetDevicePolicyLimits(KeyManager keyManager) =>
+		new(keyManager.ColdcardMaxSatsLeaving, keyManager.ColdcardMaxTransactionsPerPeriod, keyManager.ColdcardMinInputs);
+
+	public static void SetDevicePolicyLimits(KeyManager keyManager, DevicePolicyLimits limits)
+	{
+		keyManager.ColdcardMaxSatsLeaving = limits.MaxSatsLeaving;
+		keyManager.ColdcardMaxTransactionsPerPeriod = limits.MaxTransactionsPerPeriod;
+		keyManager.ColdcardMinInputs = limits.MinRoundInputs;
 	}
 
 	/// <summary>Whether a detected device can act as a coinjoin remote signer, to offer it while importing.</summary>
