@@ -24,6 +24,9 @@ public partial class WalletSettingsModel : ReactiveObject
 	[AutoNotify] private int _anonScoreTarget;
 	[AutoNotify] private int _coinJoinDeviceMaxRounds;
 	[AutoNotify] private decimal _coinJoinDeviceMaxMiningFeeRate;
+	[AutoNotify] private long _devicePolicyMaxSatsLeaving;
+	[AutoNotify] private int _devicePolicyMaxTransactionsPerPeriod;
+	[AutoNotify] private int _devicePolicyMinRoundInputs;
 	[AutoNotify] private bool _nonPrivateCoinIsolation;
 	[AutoNotify] private bool _allowPaymentsRegardlessOfAnonScore;
 	[AutoNotify] private WalletId? _outputWalletId;
@@ -46,6 +49,10 @@ public partial class WalletSettingsModel : ReactiveObject
 		_anonScoreTarget = _keyManager.AnonScoreTarget;
 		_coinJoinDeviceMaxRounds = _keyManager.CoinJoinDeviceMaxRounds;
 		_coinJoinDeviceMaxMiningFeeRate = _keyManager.CoinJoinDeviceMaxMiningFeeRate;
+		var devicePolicyLimits = HardwareWalletService.GetDevicePolicyLimits(_keyManager);
+		_devicePolicyMaxSatsLeaving = devicePolicyLimits.MaxSatsLeaving;
+		_devicePolicyMaxTransactionsPerPeriod = devicePolicyLimits.MaxTransactionsPerPeriod;
+		_devicePolicyMinRoundInputs = devicePolicyLimits.MinRoundInputs;
 		_nonPrivateCoinIsolation = _keyManager.NonPrivateCoinIsolation;
 		_allowPaymentsRegardlessOfAnonScore = _keyManager.AllowPaymentsRegardlessOfAnonScore;
 
@@ -73,7 +80,10 @@ public partial class WalletSettingsModel : ReactiveObject
 
 		this.WhenAnyValue(
 				x => x.CoinJoinDeviceMaxRounds,
-				x => x.CoinJoinDeviceMaxMiningFeeRate)
+				x => x.CoinJoinDeviceMaxMiningFeeRate,
+				x => x.DevicePolicyMaxSatsLeaving,
+				x => x.DevicePolicyMaxTransactionsPerPeriod,
+				x => x.DevicePolicyMinRoundInputs)
 			.Skip(1)
 			.Do(_ => SetValues())
 			.Subscribe();
@@ -87,6 +97,15 @@ public partial class WalletSettingsModel : ReactiveObject
 	}
 
 	public WalletType WalletType { get; }
+
+	/// <summary>See <see cref="HardwareWalletService.HasDevicePolicyLimits"/>.</summary>
+	public bool HasDevicePolicyLimits => HardwareWalletService.HasDevicePolicyLimits(_keyManager);
+
+	/// <summary>See <see cref="HardwareWalletService.IsDevicePolicyOutOfSync"/>.</summary>
+	public bool IsDevicePolicyOutOfSync => HardwareWalletService.IsDevicePolicyOutOfSync(_keyManager);
+
+	/// <summary>See <see cref="HardwareWalletService.DescribeLimitEnforcement"/>.</summary>
+	public string CoinJoinLimitsEnforcedBy => HardwareWalletService.DescribeLimitEnforcement(_keyManager);
 
 	/// <summary>See <see cref="IWalletModel.HasSeparateCoinJoinAccount"/>.</summary>
 	public bool HasSeparateCoinJoinAccount => _keyManager.UsesSlip25CoinJoinAccount();
@@ -124,6 +143,9 @@ public partial class WalletSettingsModel : ReactiveObject
 		_keyManager.AnonScoreTarget = AnonScoreTarget;
 		_keyManager.CoinJoinDeviceMaxRounds = CoinJoinDeviceMaxRounds;
 		_keyManager.CoinJoinDeviceMaxMiningFeeRate = CoinJoinDeviceMaxMiningFeeRate;
+		HardwareWalletService.SetDevicePolicyLimits(
+			_keyManager,
+			new HardwareWalletService.DevicePolicyLimits(DevicePolicyMaxSatsLeaving, DevicePolicyMaxTransactionsPerPeriod, DevicePolicyMinRoundInputs));
 		_keyManager.NonPrivateCoinIsolation = NonPrivateCoinIsolation;
 		_keyManager.AllowPaymentsRegardlessOfAnonScore = AllowPaymentsRegardlessOfAnonScore;
 		_keyManager.DefaultSendWorkflow = DefaultSendWorkflow;

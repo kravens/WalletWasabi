@@ -13,6 +13,7 @@ using WalletWasabi.Blockchain.TransactionOutputs;
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Models;
 using WalletWasabi.Rpc;
@@ -126,6 +127,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 				["masterKeyFingerprint"] = device.Fingerprint?.ToString() ?? "",
 				["initialized"] = device.IsInitialized(),
 				["canSignCoinJoins"] = HardwareWalletService.CanSignCoinJoins(device),
+				["vendor"] = device.Model.VendorOf().ToString(),
 				["needsPin"] = device.NeedsPinSent ?? false,
 				["needsPassphrase"] = device.NeedsPassphraseSent ?? false,
 				["error"] = device.Error ?? ""
@@ -305,6 +307,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 			["isNonPrivateCoinIsolation"] = activeWallet.KeyManager.NonPrivateCoinIsolation,
 			["allowPaymentsRegardlessOfAnonScore"] = activeWallet.KeyManager.AllowPaymentsRegardlessOfAnonScore,
 			["coinjoinSignedByDevice"] = HardwareWalletService.IsRemoteSigner(km),
+			["coinjoinDeviceVendor"] = km.GetCoinJoinVendor().ToString(),
 			["coinjoinDeviceMaxRounds"] = km.CoinJoinDeviceMaxRounds,
 			["coinjoinDeviceMaxMiningFeeRate"] = km.CoinJoinDeviceMaxMiningFeeRate,
 			["accounts"] = GetAccounts(km)

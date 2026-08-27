@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Reactive.Disposables;
 using System.Reactive.Disposables.Fluent;
@@ -39,6 +40,10 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _plebStopThreshold;
 	[AutoNotify] private string _deviceMaxRounds;
 	[AutoNotify] private string _deviceMaxMiningFeeRate;
+	[AutoNotify] private string _devicePolicyMaxSatsLeaving;
+	[AutoNotify] private string _devicePolicyMaxTransactionsPerPeriod;
+	[AutoNotify] private string _devicePolicyMinRoundInputs;
+	[AutoNotify] private bool _devicePolicyOutOfSync;
 	[AutoNotify] private bool _isOutputWalletSelectionEnabled = true;
 	[AutoNotify] private IWalletModel _selectedOutputWallet;
 	[AutoNotify] private ReadOnlyObservableCollection<IWalletModel> _wallets = ReadOnlyObservableCollection<IWalletModel>.Empty;
@@ -55,6 +60,12 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_allowPaymentsRegardlessOfAnonScore = _wallet.Settings.AllowPaymentsRegardlessOfAnonScore;
 		HasDeviceAuthorizationLimits = _wallet.CoinJoinNeedsDeviceAuthorization;
 		_deviceMaxRounds = _wallet.Settings.CoinJoinDeviceMaxRounds.ToString();
+		_devicePolicyMaxSatsLeaving = _wallet.Settings.DevicePolicyMaxSatsLeaving.ToString(CultureInfo.InvariantCulture);
+		_devicePolicyMaxTransactionsPerPeriod = _wallet.Settings.DevicePolicyMaxTransactionsPerPeriod.ToString(CultureInfo.InvariantCulture);
+		_devicePolicyMinRoundInputs = _wallet.Settings.DevicePolicyMinRoundInputs.ToString(CultureInfo.InvariantCulture);
+		_devicePolicyOutOfSync = _wallet.Settings.IsDevicePolicyOutOfSync;
+		HasDevicePolicyLimits = _wallet.Settings.HasDevicePolicyLimits;
+		CoinJoinLimitsEnforcedBy = _wallet.Settings.CoinJoinLimitsEnforcedBy;
 		_deviceMaxMiningFeeRate = _wallet.Settings.CoinJoinDeviceMaxMiningFeeRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
 		_selectedOutputWallet = UiContext.WalletRepository.Wallets.Items.First(x => x.Id == _wallet.Settings.OutputWalletId);
@@ -113,6 +124,9 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		this.ValidateProperty(x => x.AnonScoreTarget, ValidateAnonScoreTarget);
 		this.ValidateProperty(x => x.DeviceMaxRounds, ValidateDeviceMaxRounds);
 		this.ValidateProperty(x => x.DeviceMaxMiningFeeRate, ValidateDeviceMaxMiningFeeRate);
+		this.ValidateProperty(x => x.DevicePolicyMaxSatsLeaving, ValidateDevicePolicyMaxSatsLeaving);
+		this.ValidateProperty(x => x.DevicePolicyMaxTransactionsPerPeriod, ValidateDevicePolicyMaxTransactionsPerPeriod);
+		this.ValidateProperty(x => x.DevicePolicyMinRoundInputs, ValidateDevicePolicyMinRoundInputs);
 
 		this.WhenAnyValue(x => x.PlebStopThreshold)
 			.Skip(1)
@@ -187,6 +201,63 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		}
 	}
 
+	/// <summary>Whether the device runs a policy of its own, which is what these extra limits belong to.</summary>
+	public bool HasDevicePolicyLimits { get; }
+
+	/// <summary>Which of these limits the device enforces and which Wasabi does, in the user's own words.</summary>
+	public string CoinJoinLimitsEnforcedBy { get; } = "";
+
+	private void ValidateDevicePolicyMaxSatsLeaving(IValidationErrors errors)
+	{
+		// A round costs the wallet its fee share, so a cap under a few thousand sats would refuse everything.
+		// The upper end is a whole bitcoin, past which the cap stops being a cap.
+		if (long.TryParse(DevicePolicyMaxSatsLeaving, NumberStyles.Number, CultureInfo.InvariantCulture, out var sats)
+			&& sats is >= 1_000 and <= 100_000_000)
+		{
+			_wallet.Settings.DevicePolicyMaxSatsLeaving = sats;
+			_wallet.Settings.Save();
+			RefreshDevicePolicySync();
+		}
+		else
+		{
+			errors.Add(ErrorSeverity.Error, "Must be between 1,000 and 100,000,000 sats.");
+		}
+	}
+
+	private void ValidateDevicePolicyMaxTransactionsPerPeriod(IValidationErrors errors)
+	{
+		if (int.TryParse(DevicePolicyMaxTransactionsPerPeriod, out var count) && count is >= 1 and <= 500)
+		{
+			_wallet.Settings.DevicePolicyMaxTransactionsPerPeriod = count;
+			_wallet.Settings.Save();
+			RefreshDevicePolicySync();
+		}
+		else
+		{
+			errors.Add(ErrorSeverity.Error, "Must be a whole number between 1 and 500.");
+		}
+	}
+
+	private void ValidateDevicePolicyMinRoundInputs(IValidationErrors errors)
+	{
+		// 0 turns the device-side floor off; above that it is the fewest participants the device will sign with.
+		if (int.TryParse(DevicePolicyMinRoundInputs, out var inputs) && inputs is >= 0 and <= 500)
+		{
+			_wallet.Settings.DevicePolicyMinRoundInputs = inputs;
+			_wallet.Settings.Save();
+			RefreshDevicePolicySync();
+		}
+		else
+		{
+			errors.Add(ErrorSeverity.Error, "Must be a whole number between 0 and 500.");
+		}
+	}
+
+	/// <summary>Re-reads whether the saved limits still match the policy the device is enforcing. Called after
+	/// each validator, since each one may have just written a value that puts them out of step.</summary>
+	private void RefreshDevicePolicySync() =>
+		DevicePolicyOutOfSync = _wallet.Settings.IsDevicePolicyOutOfSync;
+
 	private void ValidateDeviceMaxRounds(IValidationErrors errors)
 	{
 		if (!int.TryParse(DeviceMaxRounds, out var rounds))
@@ -207,7 +278,7 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 
 	private void ValidateDeviceMaxMiningFeeRate(IValidationErrors errors)
 	{
-		if (!decimal.TryParse(DeviceMaxMiningFeeRate, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var feeRate))
+		if (!decimal.TryParse(DeviceMaxMiningFeeRate, NumberStyles.Number, CultureInfo.InvariantCulture, out var feeRate))
 		{
 			errors.Add(ErrorSeverity.Error, "Must be a fee rate in sat/vByte.");
 			return;
