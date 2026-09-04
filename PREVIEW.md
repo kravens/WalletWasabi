@@ -1,6 +1,6 @@
 # Wasabi Preview — hardware wallet coinjoin
 
-This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/WalletWasabi/WalletWasabi) from the `kravens` fork. It merges all of the hardware-wallet coinjoin work (Trezor, Coldcard, Passport Prime, Krux) into one build, rebased onto current upstream `master`, so people can try it and give feedback before the work is split into reviewable upstream PRs.
+This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/WalletWasabi/WalletWasabi) from the `kravens` fork. It merges all of the hardware-wallet coinjoin work (Trezor, Coldcard, Passport Prime, Krux) into one build, based on the official **v2.8.2** release, so people can try it and give feedback before the work is split into reviewable upstream PRs.
 
 **⚠️ This is experimental software.**
 
@@ -17,9 +17,11 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 - Mainnet coinjoin has been verified end-to-end with this stack.
 
 ### Coldcard Mk4/Mk5 — tested on Windows, Linux and Mac
-- Requires our [custom Coldcard firmware](https://github.com/kravens/firmware): branch [`feature/slip19-coinjoin`](https://github.com/kravens/firmware/tree/feature/slip19-coinjoin), or [`feature/slip19-coinjoin-edge`](https://github.com/kravens/firmware/tree/feature/slip19-coinjoin-edge) for the edge/taproot line. It adds SLIP-19 ownership proofs and the coinjoin HSM rules. (Mk4/Mk5 only: the Q ships with HSM commands disabled, Mk3 firmware is too old.)
-- Prebuilt, signed images are on the [firmware release](https://github.com/kravens/firmware/releases/tag/coinjoin-fw-1): `5.6.0` (Mk4) and `6.6.0X` Edge (Mk4 **and Mk5**), with SHA256 manifest, install steps and the way back to official Coinkite firmware.
-- Isolation comes from an HSM policy you review and approve on the device (max sats leaving, transactions per period, minimum round inputs). Signing then runs unattended under that policy.
+- Requires our [custom Coldcard firmware](https://github.com/kravens/firmware), branch [`feature/slip19-coinjoin`](https://github.com/kravens/firmware/tree/feature/slip19-coinjoin). It is now built on Coinkite's **Edge** line (6.6.1X) — the only Coldcard line that signs taproot, and Wasabi rounds are taproot. It adds SLIP-19 ownership proofs and the coinjoin HSM rules, and is under review upstream as [Coldcard PR #685](https://github.com/Coldcard/firmware/pull/685). (Mk3 firmware is too old.)
+- Prebuilt image on the [`coinjoin-fw-2` release](https://github.com/kravens/firmware/releases/tag/coinjoin-fw-2): `6.6.1X` Edge for Mk4 **and Mk5**, with SHA256 manifest, install steps and the way back to official Coinkite firmware. The `coinjoin-fw-1` images (5.6.0 / 6.6.0X) are superseded; the 5.6.0 stable-line build cannot sign a taproot round.
+- Unattended: isolation comes from an HSM policy you review and approve on the device (max sats leaving, transactions per period, fee per vbyte, minimum round inputs). Signing then runs under that policy without touching the device.
+- Attended, no policy: the device asks on screen for every ownership proof (path, address, commitment digest) and for the round's PSBT. Slower — one confirmation per coin — but it needs no HSM setup and is the way to try a round before committing to a policy.
+- **Coldcard Q: do not flash this firmware.** The Q has no HSM mode, and an earlier experimental Q build bricked a device: a validly signed image that fails before login is unrecoverable on a retail Q. The attended flow is verified on the Q *simulator* only. A Q image waits on Coinkite confirming a recovery path.
 
 ### Foundation Passport Prime — firmware work required
 - Dev demo: [Coinjoin Signer on Foundation's app showcase](https://foundation.xyz/app-showcase/coinjoin-signer).
@@ -33,6 +35,10 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 
 ## What changed since Preview 1
 
+- **Rebuilt on Wasabi v2.8.2** (this is the `v2.8.2.2` build). Picks up upstream's reorg/sync fixes, the participant-input verification in coinjoin, and native Apple Silicon HWI. The pay-in-coinjoin-regardless-of-anonscore option is gone, because upstream removed it.
+- **Coldcard firmware moved to the Edge line** (`coinjoin-fw-2`, 6.6.1X) so taproot rounds can be signed, and ownership proofs no longer require an HSM policy — see the Coldcard section.
+- **Device enumeration survives a Trezor waiting for its passphrase.** HWI omits the model then; the wallet no longer fails the whole enumeration over it.
+- **The Tools tab is back for hardware-backed wallets**, which are watch-only on the host and were losing it.
 - **Current Trezor Suite works again.** Suite now ships a rewritten bridge that rejected the wire format Preview 1 used, so the wallet could not connect while Suite was running. It now detects which bridge is present and speaks the matching format. Verified on a Model T against Suite 26.8.2, and against a legacy standalone bridge.
 - **The daemon does the work, not the interface.** Every device operation goes through one service in the core with a backend per vendor, so `wassabeed` and the JSON-RPC API can do what the GUI can. `enumeratedevices` and the wallet status now report which vendor a device is.
 - **Your device's own limits are visible again**, named for what they mean rather than for the brand, and the settings screen now says plainly which limits your device enforces and which Wasabi does.
