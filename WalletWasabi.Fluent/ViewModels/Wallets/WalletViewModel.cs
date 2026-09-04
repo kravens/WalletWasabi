@@ -119,9 +119,9 @@ public partial class WalletViewModel : RoutableViewModel, IWalletViewModel
 					 return isSelected && !WalletModel.IsCoinJoinEnabled && (isPointerOver || isMusicBoxFlyoutDisplayed);
 				 }
 
-				 // upstream 2.8.2 dropped the pay-regardless-of-anonscore option; what stays ours is that a
-				 // hardware-backed wallet may coinjoin even though it is watch-only on the host
-				 return (isSelected && !hasNoBalance && (isPointerOver || isMusicBoxFlyoutDisplayed)) && WalletModel.CanCoinJoin;
+				 // Always visible for a wallet that can coinjoin (upstream #15011), no pointer-over needed. What stays
+				 // ours is that a hardware-backed wallet may coinjoin even though it is watch-only on the host.
+				 return isSelected && !hasNoBalance && WalletModel.CanCoinJoin;
 			 });
 
 
