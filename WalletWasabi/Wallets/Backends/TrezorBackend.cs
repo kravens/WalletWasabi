@@ -5,6 +5,7 @@ using WalletWasabi.Blockchain.Keys;
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Hwi;
 using WalletWasabi.Hwi.Trezor;
+using WalletWasabi.Logging;
 using WalletWasabi.Models;
 using WalletWasabi.WabiSabi.Client;
 
@@ -103,6 +104,16 @@ internal class TrezorBackend : IHardwareWalletBackend
 		CancellationToken cancellationToken)
 	{
 		var keyChain = existingKeyChain as TrezorKeyChain;
+		if (keyChain is not null && !await keyChain.Device.IsSessionAliveAsync(cancellationToken).ConfigureAwait(false))
+		{
+			// The bridge session died under the wallet: the bridge was restarted, or dropped the device after a
+			// USB error, or the wallet was stopped and disposed its transport. Nothing reported that at the time,
+			// and every call on the old session would fail forever - so let go of it and acquire the device anew.
+			Logger.LogInfo("The Trezor bridge session of this wallet is gone, acquiring the device again.");
+			keyChain.Dispose();
+			keyChain = null;
+		}
+
 		if (keyChain is null)
 		{
 			var device = await AcquireAsync(keyManager.MasterFingerprint, cancellationToken).ConfigureAwait(false);
