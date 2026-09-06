@@ -779,6 +779,17 @@ fi
 #------------------------------------------------------------------------------------#
 if [ "$SIGN_PGP" = "yes" ]; then
 pushd "$PACKAGES_DIR" || exit
+
+# Forks (e.g. preview builds) have no signing keys. Publish a plain manifest then, for the maintainer to
+# sign by hand (gpg --detach-sign SHA256SUMS.txt), instead of failing after every package was built.
+if [ -z "${SIGNING_WASABI_KEY:-}" ] || ! gpg --list-secret-keys --with-colons 2>/dev/null | grep -q '^sec'; then
+  echo "No signing keys available; writing an unsigned SHA256SUMS.txt."
+  for FILE in *; do
+    sha256sum "$FILE"
+  done > SHA256SUMS.txt
+  popd || exit
+else
+
 for FILE in ./*; do
   sha256sum "$FILE" >> SHA256SUMS
   gpg --armor --detach-sign --output "$FILE.asc" "$FILE"
@@ -807,6 +818,7 @@ dotnet fsi signer.fsx SHA256SUMS.asc $SIGNING_WASABI_KEY > SHA256SUMS.wasabisig
 rm signer.fsx
 
 popd || exit
+fi
 fi
 
 if [ "$RELEASE_NOTE" = "yes" ]; then

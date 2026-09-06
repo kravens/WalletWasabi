@@ -128,6 +128,9 @@ jobs:
       contents: write # to create GitHub release (softprops/action-gh-release)
     runs-on: ubuntu-latest
     needs: [debian-package-and-zips, appimage-package, installer-for-windows, macos-packages-and-zips]
+    env:
+      # Forks (e.g. preview builds) have no signing key; the manifest is then published unsigned, to be signed by hand.
+      HAS_SIGNING_KEY: ${{ secrets.SIGNING_PGP_KEY != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -157,6 +160,7 @@ jobs:
           name: packages-zip-dmg
           path: ./packages
       - name: Import GPG key
+        if: env.HAS_SIGNING_KEY == 'true'
         uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.SIGNING_PGP_KEY }}
@@ -170,6 +174,16 @@ jobs:
         run: ls -l ./packages
       - name: Create release note
         run: bash -x ./Contrib/release.sh releasenote > ReleaseNote.md
+      - name: Mark a preview tag as a pre-release
+        id: kind
+        shell: bash
+        # A fourth version component (v2.8.2.3) is a preview built on that official release, never a release itself.
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Release
         uses: softprops/action-gh-release@v3
         with:
@@ -178,3 +192,4 @@ jobs:
           body_path: ReleaseNote.md
           generate_release_notes: true
           draft: true
+          prerelease: ${{ steps.kind.outputs.prerelease == 'true' }}
