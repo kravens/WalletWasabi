@@ -784,9 +784,9 @@ pushd "$PACKAGES_DIR" || exit
 # sign by hand (gpg --detach-sign SHA256SUMS.txt), instead of failing after every package was built.
 if [ -z "${SIGNING_WASABI_KEY:-}" ] || ! gpg --list-secret-keys --with-colons 2>/dev/null | grep -q '^sec'; then
   echo "No signing keys available; writing an unsigned SHA256SUMS.txt."
-  for FILE in *; do
-    sha256sum "$FILE"
-  done > SHA256SUMS.txt
+  # Hash everything before the manifest file exists, or it lists itself with the hash of an empty file.
+  MANIFEST=$(sha256sum -- *)
+  printf '%s\n' "$MANIFEST" > SHA256SUMS.txt
   popd || exit
 else
 
