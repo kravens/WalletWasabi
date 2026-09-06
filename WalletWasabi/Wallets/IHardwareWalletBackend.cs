@@ -33,7 +33,12 @@ internal interface IHardwareWalletBackend : IDisposable
 	/// signs from the wallet's ordinary accounts has nothing extra to read.
 	/// </summary>
 	/// <param name="masterFingerprint">Which device to use, or null to take the one that is connected.</param>
-	Task<KeyManager?> TryImportAsync(HDFingerprint? masterFingerprint, string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken) =>
+	/// <param name="addressToConfirm">
+	/// Told each address the device is about to show, so the caller can put it next to the device for the
+	/// user to compare. A transport that is not trusted - an unauthenticated local bridge - has every account
+	/// it hands out proven this way before anything is written.
+	/// </param>
+	Task<KeyManager?> TryImportAsync(HDFingerprint? masterFingerprint, string walletFilePath, bool enableCoinjoin, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken) =>
 		Task.FromResult<KeyManager?>(null);
 
 	/// <summary>Asks the device to authorize a batch of coinjoin rounds and returns the key chain that signs them.</summary>
@@ -46,8 +51,11 @@ internal interface IHardwareWalletBackend : IDisposable
 		FeeRate maxMiningFeeRate,
 		CancellationToken cancellationToken);
 
-	/// <summary>Turns an already imported watch-only wallet into one this vendor can coinjoin with.</summary>
-	Task EnableCoinJoinAsync(KeyManager keyManager, CancellationToken cancellationToken) => Task.CompletedTask;
+	/// <summary>
+	/// Turns an already imported watch-only wallet into one this vendor can coinjoin with. An account read
+	/// for it is proven on the device the way an import is, see <see cref="TryImportAsync"/>.
+	/// </summary>
+	Task EnableCoinJoinAsync(KeyManager keyManager, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken) => Task.CompletedTask;
 
 	/// <summary>Signs over the vendor's transport, or returns null to let HWI do it.</summary>
 	Task<PSBT?> TrySignTransactionAsync(KeyManager keyManager, PSBT psbt, SmartTransaction transaction, CancellationToken cancellationToken) =>

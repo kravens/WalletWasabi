@@ -242,7 +242,11 @@ public class HardwareWalletService : IDisposable
 	/// Also read the coinjoin account, so the device can sign coinjoins. Requires a confirmation on the device,
 	/// and is only possible for models that can act as a remote signer.
 	/// </param>
-	public async Task<KeyManager> ImportAsync(HwiEnumerateEntry device, string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken)
+	/// <param name="addressToConfirm">
+	/// Told each address the device is about to show, so the caller can put it next to the device for the
+	/// user to compare. Only an import over a vendor's own transport shows addresses.
+	/// </param>
+	public async Task<KeyManager> ImportAsync(HwiEnumerateEntry device, string walletFilePath, bool enableCoinjoin, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken)
 	{
 		if (device.Fingerprint is null)
 		{
@@ -255,7 +259,7 @@ public class HardwareWalletService : IDisposable
 
 		var vendor = device.Model.VendorOf();
 		if (enableCoinjoin && _backends.GetValueOrDefault(vendor) is { } backend
-			&& await backend.TryImportAsync(fingerprint, walletFilePath, enableCoinjoin: true, genCts.Token).ConfigureAwait(false) is { } fromDevice)
+			&& await backend.TryImportAsync(fingerprint, walletFilePath, enableCoinjoin: true, addressToConfirm, genCts.Token).ConfigureAwait(false) is { } fromDevice)
 		{
 			return fromDevice;
 		}
@@ -280,7 +284,7 @@ public class HardwareWalletService : IDisposable
 	/// Imports the connected device without detecting it over HWI first, which a headless host cannot do.
 	/// Everything is read in one bridge session, so the device is only asked to confirm once.
 	/// </summary>
-	public async Task<KeyManager> ImportConnectedAsync(string walletFilePath, bool enableCoinjoin, CancellationToken cancellationToken)
+	public async Task<KeyManager> ImportConnectedAsync(string walletFilePath, bool enableCoinjoin, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken)
 	{
 		// A vendor with a transport of its own can find its device without HWI, which a headless host cannot
 		// drive for the accounts it needs. Ask each in turn; the others are found by enumerating below.
@@ -289,7 +293,7 @@ public class HardwareWalletService : IDisposable
 		{
 			try
 			{
-				if (await backend.TryImportAsync(masterFingerprint: null, walletFilePath, enableCoinjoin, cancellationToken).ConfigureAwait(false) is { } fromDevice)
+				if (await backend.TryImportAsync(masterFingerprint: null, walletFilePath, enableCoinjoin, addressToConfirm, cancellationToken).ConfigureAwait(false) is { } fromDevice)
 				{
 					return fromDevice;
 				}
@@ -316,14 +320,22 @@ public class HardwareWalletService : IDisposable
 			throw new HardwareWalletException("More than one device is connected. Leave only the one to import.");
 		}
 
-		return await ImportAsync(detected[0], walletFilePath, enableCoinjoin, cancellationToken).ConfigureAwait(false);
+		return await ImportAsync(detected[0], walletFilePath, enableCoinjoin, addressToConfirm, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>
-	/// Adds a coinjoin account to an already imported watch-only wallet, so it can start signing coinjoins.
-	/// Requires a confirmation on the device. No-op if the wallet already has one.
+	/// Reads a Trezor's accounts in one bridge session and has the device show the first address of each
+	/// before the wallet is written. Here so the check can be exercised without a bridge.
 	/// </summary>
-	public async Task EnableCoinJoinAsync(KeyManager keyManager, CancellationToken cancellationToken)
+	internal Task<KeyManager> ReadAccountsAsync(TrezorDevice device, HDFingerprint fingerprint, string walletFilePath, bool enableCoinjoin, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken) =>
+		_trezor.ReadAccountsAsync(device, fingerprint, walletFilePath, enableCoinjoin, addressToConfirm, cancellationToken);
+
+	/// <summary>
+	/// Adds a coinjoin account to an already imported watch-only wallet, so it can start signing coinjoins.
+	/// Requires a confirmation on the device, which then shows the first address of the account for the user
+	/// to check, as an import does. No-op if the wallet already has one.
+	/// </summary>
+	public async Task EnableCoinJoinAsync(KeyManager keyManager, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken)
 	{
 		if (!keyManager.IsHardwareWallet)
 		{
@@ -336,7 +348,7 @@ public class HardwareWalletService : IDisposable
 
 		// The wallet is not a coinjoin wallet yet, so there is no recorded vendor to ask; the device that
 		// holds its keys decides. Only Trezor can be enabled after the fact today, by adding the account.
-		await _trezor.EnableCoinJoinAsync(keyManager, cancellationToken).ConfigureAwait(false);
+		await _trezor.EnableCoinJoinAsync(keyManager, addressToConfirm, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>
