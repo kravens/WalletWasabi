@@ -16,7 +16,7 @@ namespace WalletWasabi.Tests.UnitTests.Hwi;
 public class KruxKeyChainTests
 {
 	/// <summary>A round with our taproot coin, our segwit coin and a foreign coin, paying to one of ours and one foreign output.</summary>
-	private static (TransactionWithPrecomputedData Round, Coin[] Coins, KeyManager KeyManager) Round()
+	internal static (TransactionWithPrecomputedData Round, Coin[] Coins, KeyManager KeyManager) Round()
 	{
 		var keyManager = TestKeyManagers.PolicySignerWallet();
 		var ourTaproot = keyManager.GetNextReceiveKey(new LabelsArray("a"), ScriptPubKeyType.TaprootBIP86);

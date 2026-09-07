@@ -6,8 +6,8 @@ namespace WalletWasabi.Hwi.Passport;
 /// a vendor HID interface with 64-byte reports driven the same way a Coldcard is.</summary>
 public static class PassportUsb
 {
-	// Placeholders until read off real hardware (HidD_GetAttributes, see PASSPORT_TESTING.md): the
-	// wallet-rpc interface has no host transport in the KeyOS SDK yet, so no device has advertised them.
+	// Placeholders until read off real hardware: the wallet-rpc interface has no host transport in the
+	// KeyOS SDK yet, so no device has advertised them.
 	public const ushort VendorId = 0x1209;
 	public const ushort ProductId = 0x7853;
 

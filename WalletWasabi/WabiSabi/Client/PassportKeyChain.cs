@@ -1,10 +1,4 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using NBitcoin;
-using WalletWasabi.Blockchain.Keys;
-using WalletWasabi.Crypto;
-using WalletWasabi.Extensions;
+using System.IO;
 using WalletWasabi.Hwi.Passport;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.WabiSabi.Models.MultipartyTransaction;
@@ -12,45 +6,59 @@ using WalletWasabi.WabiSabi.Models.MultipartyTransaction;
 namespace WalletWasabi.WabiSabi.Client;
 
 /// <summary>
-/// Key chain backed by a Foundation Passport Prime acting as a coinjoin remote signer, reached through
-/// <see cref="IPassportDevice"/> (USB HID today; QuantumLink drops in behind the same interface).
-/// A one-time on-device session authorization (see <see cref="Wallets.Wallet.AuthorizeHardwareCoinJoinAsync"/>)
-/// fixes the account, coordinator, per-round fee cap and self-spend rule; afterwards ownership proofs use the
-/// firmware's SLIP-19 command and the round is signed by handing the device a PSBT it verifies against the
-/// authorized policy and signs unattended. Uses the default segwit account — no SLIP-25 account like Trezor.
+/// Key chain backed by a Foundation Passport Prime acting as a coinjoin remote signer through
+/// <see cref="IPassportDevice"/>. One on-device approval of a session policy (account, coordinator, fee budget,
+/// rounds, lifetime) yields a random token; ownership proofs and signatures are then produced unattended under
+/// it, the device checking every round against the policy, so a compromised host cannot spend beyond it. The
+/// wallet's ordinary accounts are used, there is no SLIP-25 account like Trezor's.
 /// </summary>
 public class PassportKeyChain : IKeyChain, IDisposable
 {
-	public PassportKeyChain(IPassportDevice device, uint sessionId, KeyManager keyManager)
+	/// <param name="roundsRemaining">The session's round budget; a coinjoin must not start on a spent one, which would fail only when it came time to sign.</param>
+	/// <param name="expiresAt">When the device stops honouring the session on its own clock.</param>
+	public PassportKeyChain(IPassportDevice device, byte[] sessionToken, KeyManager keyManager, int roundsRemaining, DateTimeOffset expiresAt)
 	{
-		if (!keyManager.IsHardwareWallet)
-		{
-			throw new ArgumentException("A Passport key chain requires a hardware wallet key manager.");
-		}
-
 		_device = device;
-		_sessionId = sessionId;
+		_sessionToken = sessionToken;
 		_keyManager = keyManager;
+		_roundsRemaining = roundsRemaining;
+		_expiresAt = expiresAt;
 	}
 
 	private readonly IPassportDevice _device;
-	private readonly uint _sessionId;
+	private readonly byte[] _sessionToken;
 	private readonly KeyManager _keyManager;
+	private readonly DateTimeOffset _expiresAt;
 	private readonly object _signingLock = new();
+	private int _roundsRemaining;
 	private (uint256 TxId, Dictionary<OutPoint, WitScript> Witnesses)? _signedTransactionCache;
+
+	public IPassportDevice Device => _device;
+
+	/// <summary>The approved session runs out of rounds or of time; it has to be approved again on the device.</summary>
+	public bool NeedsReauthorization => Volatile.Read(ref _roundsRemaining) <= 0 || DateTimeOffset.UtcNow >= _expiresAt;
+
+	/// <summary>The device verifies the whole round over USB before it signs.</summary>
+	public bool SigningTakesTime => true;
+
+	/// <summary>The wallet's cap, enforced by Wasabi; the device budgets in satoshis and would refuse a round above its own limits anyway.</summary>
+	public FeeRate? MaxMiningFeeRate { get; internal set; }
+
+	public bool CanSign(ScriptType scriptType) =>
+		scriptType == ScriptType.P2WPKH || (scriptType == ScriptType.Taproot && _device.SupportsTaproot);
 
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
 		var keyPath = _keyManager.TryGetKeyPath(destination.ScriptPubKey)
 			?? throw new InvalidOperationException($"The key path for '{destination.ScriptPubKey}' was not found.");
 
-		var proofBytes = _device.GetOwnershipProof(_sessionId, keyPath, commitmentData.ToBytes());
-		return OwnershipProof.FromBytes(proofBytes);
+		return OwnershipProof.FromBytes(_device.GetOwnershipProof(_sessionToken, keyPath, commitmentData.ToBytes()));
 	}
 
 	/// <summary>
-	/// Signs all our inputs of the coinjoin in one device PSBT signing (cached per round), then serves the
-	/// per-alice requests from the witness cache — one device round trip per coinjoin round.
+	/// The device validates and signs the whole coinjoin in a single PSBT round trip, because every sign call
+	/// spends one round of the session budget. The witnesses are cached, so the per-coin calls of the signing
+	/// phase hit the device only once per round.
 	/// </summary>
 	public Transaction Sign(TransactionWithPrecomputedData unsignedCoinJoin, Coin coin)
 	{
@@ -59,8 +67,12 @@ public class PassportKeyChain : IKeyChain, IDisposable
 			var transaction = unsignedCoinJoin.Transaction;
 			if (_signedTransactionCache is not { } cache || cache.TxId != transaction.GetHash())
 			{
-				cache = (transaction.GetHash(), SignOnDevice(unsignedCoinJoin));
+				var signedBytes = _device.SignCoinJoin(_sessionToken, RemoteSignerPsbt.Build(unsignedCoinJoin, _keyManager).ToBytes());
+				cache = (transaction.GetHash(), RemoteSignerPsbt.Witnesses(PSBT.Load(signedBytes, _keyManager.GetNetwork())));
 				_signedTransactionCache = cache;
+
+				// One round of the approved session is spent per transaction signed, not per input.
+				Interlocked.Decrement(ref _roundsRemaining);
 			}
 
 			transaction = transaction.Clone();
@@ -71,42 +83,21 @@ public class PassportKeyChain : IKeyChain, IDisposable
 		}
 	}
 
-	private Dictionary<OutPoint, WitScript> SignOnDevice(TransactionWithPrecomputedData unsignedCoinJoin)
+	/// <summary>Revokes the session, so the device zeroizes its keys, then closes the device. A session the device has already dropped is nothing to revoke.</summary>
+	public void Dispose()
 	{
-		var network = _keyManager.GetNetwork();
-		var transaction = unsignedCoinJoin.Transaction;
-		var spentOutputs = ((TaprootReadyPrecomputedTransactionData)unsignedCoinJoin.PrecomputedTransactionData).SpentOutputs;
-
-		// Build the PSBT: witness UTXOs for every input (so the device sees the amounts and can enforce its
-		// fee cap), plus BIP-32 derivations for the inputs and outputs that are ours (so it signs our inputs
-		// and credits our outputs as self-spend). Foreign inputs/outputs carry no derivations.
-		var psbt = PSBT.FromTransaction(transaction, network);
-		for (int i = 0; i < psbt.Inputs.Count; i++)
+		try
 		{
-			psbt.Inputs[i].WitnessUtxo = spentOutputs[i];
+			_device.RevokeSession(_sessionToken);
 		}
-		psbt.AddKeyPaths(_keyManager);
-
-		var ourOutpoints = transaction.Inputs.AsIndexedInputs()
-			.Where(input => _keyManager.TryGetKeyPath(spentOutputs[(int)input.Index].ScriptPubKey) is not null)
-			.Select(input => input.PrevOut)
-			.ToHashSet();
-
-		var signedBytes = _device.SignCoinJoin(_sessionId, psbt.ToBytes());
-		var signedPsbt = PSBT.Load(signedBytes, network);
-		signedPsbt.Finalize();
-
-		var witnesses = new Dictionary<OutPoint, WitScript>();
-		foreach (var input in signedPsbt.Inputs)
+		catch (Exception e) when (e is HardwareWalletException or IOException)
 		{
-			if (ourOutpoints.Contains(input.PrevOut) && input.FinalScriptWitness is { } witness)
-			{
-				witnesses[input.PrevOut] = witness;
-			}
+			Logger.LogDebug($"Passport session not revoked: {e.Message}");
 		}
-
-		return witnesses;
+		finally
+		{
+			Array.Clear(_sessionToken);
+			_device.Dispose();
+		}
 	}
-
-	public void Dispose() => _device.Dispose();
 }

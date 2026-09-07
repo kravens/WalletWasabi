@@ -5,14 +5,14 @@ namespace WalletWasabi.Hwi.Passport;
 
 /// <summary>
 /// One request/response conversation with a Passport Prime wallet-rpc service. Frames a request onto the HID
-/// channel and reassembles the reply. The wire protocol (v1) is plaintext (the channel is a local USB cable,
+/// channel and reassembles the reply. The wire protocol (v2) is plaintext (the channel is a local USB cable,
 /// and every state-changing action is gated by an on-device policy approval, so there is no link encryption
-/// like Coldcard's): request <c>[ver][cmd][len u16][payload]</c>, response adds a <c>status</c> byte after
+/// like Coldcard's): request <c>[ver][cmd][len u32][payload]</c>, response adds a <c>status</c> byte after
 /// the command echo.
 /// </summary>
 public sealed class PassportTransport : IDisposable
 {
-	public const byte ProtocolVersion = 1;
+	public const byte ProtocolVersion = 2;
 
 	private readonly IUsbHid _hid;
 
@@ -24,11 +24,11 @@ public sealed class PassportTransport : IDisposable
 	/// <summary>Sends a command and returns the response payload, throwing <see cref="PassportException"/> on a non-OK status.</summary>
 	public byte[] SendReceive(byte command, byte[] payload, int timeoutMs = 15000)
 	{
-		var request = new byte[4 + payload.Length];
+		var request = new byte[6 + payload.Length];
 		request[0] = ProtocolVersion;
 		request[1] = command;
-		BinaryPrimitives.WriteUInt16LittleEndian(request.AsSpan(2), (ushort)payload.Length);
-		payload.CopyTo(request, 4);
+		BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(2), (uint)payload.Length);
+		payload.CopyTo(request, 6);
 
 		foreach (var report in PassportFraming.PackRequest(request))
 		{
@@ -36,30 +36,29 @@ public sealed class PassportTransport : IDisposable
 		}
 
 		byte[] response = PassportFraming.ReadResponse(() => _hid.ReadReport(timeoutMs));
-		if (response.Length < 5)
+		if (response.Length < 7)
 		{
 			throw new PassportException("Truncated Passport response.");
 		}
 
 		byte status = response[2];
-		int len = BinaryPrimitives.ReadUInt16LittleEndian(response.AsSpan(3));
-		if (response.Length < 5 + len)
+		uint len = BinaryPrimitives.ReadUInt32LittleEndian(response.AsSpan(3));
+		if (response.Length < 7 + len)
 		{
 			throw new PassportException("Passport response shorter than its declared length.");
 		}
 
-		var responsePayload = response[5..(5 + len)];
 		if (status != PassportStatus.Ok)
 		{
 			throw new PassportException($"Passport command 0x{command:x2} failed: {PassportStatus.Describe(status)}.");
 		}
-		return responsePayload;
+		return response[7..(int)(7 + len)];
 	}
 
 	public void Dispose() => _hid.Dispose();
 }
 
-/// <summary>wallet-rpc protocol v1 command ids (see firmware <c>protocol.rs</c>).</summary>
+/// <summary>wallet-rpc protocol v2 command ids (see firmware <c>protocol.rs</c>).</summary>
 public static class PassportCommand
 {
 	public const byte GetInfo = 0x01;
@@ -70,7 +69,7 @@ public static class PassportCommand
 	public const byte RevokeSession = 0x06;
 }
 
-/// <summary>wallet-rpc protocol v1 status codes.</summary>
+/// <summary>wallet-rpc protocol v2 status codes.</summary>
 public static class PassportStatus
 {
 	public const byte Ok = 0x00;
@@ -95,7 +94,7 @@ public static class PassportStatus
 	};
 }
 
-public class PassportException : Exception
+public class PassportException : Wallets.HardwareWalletException
 {
 	public PassportException(string message) : base("Passport: " + message)
 	{
