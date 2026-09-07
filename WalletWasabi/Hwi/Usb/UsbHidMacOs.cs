@@ -1,14 +1,13 @@
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 
-namespace WalletWasabi.Hwi.Coldcard;
+namespace WalletWasabi.Hwi.Usb;
 
 /// <summary>
-/// macOS HID access to a Coldcard through IOKit, with no external dependency.
+/// macOS HID access through IOKit, with no external dependency.
 /// <para>
 /// Two asymmetries against the other platforms, both of which corrupt the stream silently if missed.
 /// </para>
@@ -27,7 +26,7 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </para>
 /// </summary>
 [SupportedOSPlatform("macos")]
-internal sealed class ColdcardHidMacOs : IColdcardHid
+internal sealed class UsbHidMacOs : IUsbHid
 {
 	private const int KIOHIDReportTypeOutput = 1;
 	private const int KIOReturnSuccess = 0;
@@ -41,35 +40,35 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 	// written by it. Letting either be collected or moved is a use-after-free that shows up as garbage
 	// frames long after the fact.
 	private readonly IOHIDReportCallback _callback;
-	private readonly byte[] _inputBuffer = new byte[ColdcardUsb.InputReportLength];
+	private readonly byte[] _inputBuffer = new byte[UsbHid.InputReportLength];
 	private GCHandle _inputBufferHandle;
 
 	private nint _runLoop;
 	private bool _disposed;
 
-	private ColdcardHidMacOs(nint device)
+	private UsbHidMacOs(nint device)
 	{
 		_device = device;
 		_callback = OnInputReport;
 		_inputBufferHandle = GCHandle.Alloc(_inputBuffer, GCHandleType.Pinned);
 
-		_runLoopThread = new Thread(RunLoop) { IsBackground = true, Name = "Coldcard HID (IOKit)" };
+		_runLoopThread = new Thread(RunLoop) { IsBackground = true, Name = "USB HID (IOKit)" };
 		_runLoopThread.Start();
 
 		// Nothing can be read until the callback is scheduled, so wait for the loop to be up rather than
 		// racing the first exchange.
 		if (!_runLoopReady.Wait(TimeSpan.FromSeconds(5)))
 		{
-			throw new IOException("The Coldcard HID run loop did not start.");
+			throw new IOException("The HID run loop did not start.");
 		}
 	}
 
-	public static IReadOnlyList<string> Enumerate() =>
-		EnumerateColdcards().Select(x => x.Serial).Where(x => x is not null).Cast<string>().ToList();
+	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId) =>
+		EnumerateDevices(vendorId, productId).Select(x => x.Serial).Where(x => x is not null).Cast<string>().ToList();
 
-	public static ColdcardHidMacOs Open(string? serialNumber)
+	public static UsbHidMacOs? Open(ushort vendorId, ushort productId, string? serialNumber)
 	{
-		foreach (var (device, serial) in EnumerateColdcards())
+		foreach (var (device, serial) in EnumerateDevices(vendorId, productId))
 		{
 			if (serialNumber is not null && serial != serialNumber)
 			{
@@ -82,22 +81,18 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 			if (result != KIOReturnSuccess)
 			{
 				throw new IOException(
-					$"Cannot open the Coldcard (IOKit error 0x{result:x8}). Another application may already "
+					$"Cannot open the device (IOKit error 0x{result:x8}). Another application may already "
 					+ "have it open.");
 			}
 
-			return new ColdcardHidMacOs(device);
+			return new UsbHidMacOs(device);
 		}
 
-		throw new InvalidOperationException(serialNumber is null
-			// A switched-off USB port looks exactly like an unplugged device from here, and on a Mk4 it is
-			// a setting rather than a fault, so name both rather than sending the user to check the cable.
-			? "Connect (and Enable) USB"
-			: $"Coldcard with serial '{serialNumber}' not found.");
+		return null;
 	}
 
-	/// <summary>Every attached device matching the Coldcard's vendor and product, with its serial.</summary>
-	private static IEnumerable<(nint Device, string? Serial)> EnumerateColdcards()
+	/// <summary>Every attached device matching the vendor and product, with its serial.</summary>
+	private static IEnumerable<(nint Device, string? Serial)> EnumerateDevices(ushort vendorId, ushort productId)
 	{
 		var manager = IOHIDManagerCreate(nint.Zero, 0);
 		if (manager == nint.Zero)
@@ -105,7 +100,7 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 			yield break;
 		}
 
-		var matching = CreateMatchingDictionary();
+		var matching = CreateMatchingDictionary(vendorId, productId);
 		IOHIDManagerSetDeviceMatching(manager, matching);
 		CFRelease(matching);
 
@@ -134,11 +129,11 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 		CFRelease(manager);
 	}
 
-	private static nint CreateMatchingDictionary()
+	private static nint CreateMatchingDictionary(ushort vendorId, ushort productId)
 	{
 		var dict = CFDictionaryCreateMutable(nint.Zero, 0, nint.Zero, nint.Zero);
-		SetNumber(dict, "VendorID", ColdcardUsb.VendorId);
-		SetNumber(dict, "ProductID", ColdcardUsb.ProductId);
+		SetNumber(dict, "VendorID", vendorId);
+		SetNumber(dict, "ProductID", productId);
 		return dict;
 
 		static void SetNumber(nint dict, string key, int value)
@@ -181,7 +176,7 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 		IOHIDDeviceRegisterInputReportCallback(
 			_device,
 			_inputBufferHandle.AddrOfPinnedObject(),
-			ColdcardUsb.InputReportLength,
+			UsbHid.InputReportLength,
 			_callback,
 			nint.Zero);
 
@@ -213,7 +208,7 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 		}
 
 		// Copy out: the buffer is reused for the next report the moment this returns.
-		var length = Math.Min((int)reportLength, ColdcardUsb.InputReportLength);
+		var length = Math.Min((int)reportLength, UsbHid.InputReportLength);
 		var frame = new byte[length];
 		Array.Copy(_inputBuffer, frame, length);
 
@@ -225,9 +220,9 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 
 	public void WriteReport(byte[] report65)
 	{
-		if (report65.Length != ColdcardUsb.OutputReportLength)
+		if (report65.Length != UsbHid.OutputReportLength)
 		{
-			throw new ArgumentException($"Output report must be {ColdcardUsb.OutputReportLength} bytes.", nameof(report65));
+			throw new ArgumentException($"Output report must be {UsbHid.OutputReportLength} bytes.", nameof(report65));
 		}
 
 		// IOKit takes the report id separately, so send the frame without its leading id byte.
@@ -235,7 +230,7 @@ internal sealed class ColdcardHidMacOs : IColdcardHid
 		var result = IOHIDDeviceSetReport(_device, KIOHIDReportTypeOutput, report65[0], frame, frame.Length);
 		if (result != KIOReturnSuccess)
 		{
-			throw new IOException($"Coldcard HID write failed (IOKit error 0x{result:x8}).");
+			throw new IOException($"HID write failed (IOKit error 0x{result:x8}).");
 		}
 	}
 

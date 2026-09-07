@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using WalletWasabi.Hwi.Coldcard;
+using WalletWasabi.Hwi.Passport;
+using WalletWasabi.Hwi.Usb;
 using Xunit;
 
 namespace WalletWasabi.Tests.UnitTests.Hwi;
@@ -48,7 +50,7 @@ public class ColdcardHidLinuxTests : IDisposable
 		// The real thing: bus 0003, vendor d13e, product cc10, zero-padded to eight digits.
 		FakeDevice("hidraw3", "0003:0000D13E:0000CC10", "2050395F4833");
 
-		var found = ColdcardHidLinux.EnumerateColdcards(_root).ToList();
+		var found = UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root).ToList();
 
 		var (node, serial) = Assert.Single(found);
 		Assert.Equal("/dev/hidraw3", node);
@@ -64,7 +66,7 @@ public class ColdcardHidLinuxTests : IDisposable
 		FakeDevice("hidraw2", null);
 		FakeDevice("hidraw4", "0003:0000D13E:0000CC10", "2050395F4833");
 
-		var found = ColdcardHidLinux.EnumerateColdcards(_root).ToList();
+		var found = UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root).ToList();
 
 		Assert.Equal("/dev/hidraw4", Assert.Single(found).Node);
 	}
@@ -76,7 +78,7 @@ public class ColdcardHidLinuxTests : IDisposable
 		// reporting it with none — Open() without a serial takes the first match.
 		FakeDevice("hidraw0", "0003:0000D13E:0000CC10");
 
-		var (node, serial) = Assert.Single(ColdcardHidLinux.EnumerateColdcards(_root).ToList());
+		var (node, serial) = Assert.Single(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root).ToList());
 
 		Assert.Equal("/dev/hidraw0", node);
 		Assert.Null(serial);
@@ -92,14 +94,24 @@ public class ColdcardHidLinuxTests : IDisposable
 		FakeDevice("hidraw2", "0000D13E:0000CC10:0003");
 		FakeDevice("hidraw3", "");
 
-		Assert.Empty(ColdcardHidLinux.EnumerateColdcards(_root));
+		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root));
+	}
+
+	[Fact]
+	public void APassportIsFoundAsAPassportAndNotAsAColdcard()
+	{
+		// The same enumerator serves both devices, so a Passport must show up under its own identity only.
+		FakeDevice("hidraw5", $"0003:{PassportUsb.VendorId:X8}:{PassportUsb.ProductId:X8}", "PP1");
+
+		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root));
+		Assert.Equal("PP1", Assert.Single(UsbHidLinux.EnumerateDevices(PassportUsb.VendorId, PassportUsb.ProductId, _root).ToList()).Serial);
 	}
 
 	[Fact]
 	public void AMissingSysfsIsNotAnError()
 	{
 		// Windows, macOS, or a kernel without HID support — as WSL2's stock kernel is.
-		Assert.Empty(ColdcardHidLinux.EnumerateColdcards(Path.Combine(_root, "does-not-exist")));
+		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, Path.Combine(_root, "does-not-exist")));
 	}
 
 	public void Dispose()

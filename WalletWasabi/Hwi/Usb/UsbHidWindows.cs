@@ -1,30 +1,29 @@
-using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Win32.SafeHandles;
 
-namespace WalletWasabi.Hwi.Passport;
+namespace WalletWasabi.Hwi.Usb;
 
 /// <summary>
-/// Windows HID access to a Passport Prime via the built-in <c>hid.dll</c> + <c>setupapi.dll</c> (no external
-/// dependency), matching the Coldcard transport approach. Enumerates the HID interface class, filters to the
-/// Passport wallet-rpc VID:PID, opens with <c>CreateFile</c>, and does fixed-size <c>ReadFile</c>/<c>WriteFile</c>.
+/// Windows HID access via the built-in <c>hid.dll</c> + <c>setupapi.dll</c> (no external dependency).
+/// Enumerates the HID interface class, filters to the wanted VID:PID, opens the device with
+/// <c>CreateFile</c>, and does overlapped-free <c>ReadFile</c>/<c>WriteFile</c> of fixed-size reports.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed class PassportHidWindows : IPassportHid
+internal sealed class UsbHidWindows : IUsbHid
 {
 	private readonly SafeFileHandle _handle;
 
-	private PassportHidWindows(SafeFileHandle handle)
+	private UsbHidWindows(SafeFileHandle handle)
 	{
 		_handle = handle;
 	}
 
-	public static IReadOnlyList<string> Enumerate()
+	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId)
 	{
 		var serials = new List<string>();
-		foreach (var path in EnumeratePassportPaths())
+		foreach (var path in EnumeratePaths(vendorId, productId))
 		{
 			if (TryReadSerial(path) is { } serial)
 			{
@@ -34,9 +33,9 @@ internal sealed class PassportHidWindows : IPassportHid
 		return serials;
 	}
 
-	public static PassportHidWindows Open(string? serialNumber)
+	public static UsbHidWindows? Open(ushort vendorId, ushort productId, string? serialNumber)
 	{
-		foreach (var path in EnumeratePassportPaths())
+		foreach (var path in EnumeratePaths(vendorId, productId))
 		{
 			if (serialNumber is not null && TryReadSerial(path) != serialNumber)
 			{
@@ -47,54 +46,71 @@ internal sealed class PassportHidWindows : IPassportHid
 				IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
 			if (!handle.IsInvalid)
 			{
-				return new PassportHidWindows(handle);
+				return new UsbHidWindows(handle);
 			}
 			handle.Dispose();
 		}
 
-		throw new InvalidOperationException(serialNumber is null
-			? "No Passport Prime found. Connect and unlock the device, and enable the wallet-rpc interface."
-			: $"Passport Prime with serial '{serialNumber}' not found.");
+		return null;
 	}
 
 	public void WriteReport(byte[] report65)
 	{
-		if (report65.Length != PassportUsb.OutputReportLength)
+		if (report65.Length != UsbHid.OutputReportLength)
 		{
-			throw new ArgumentException($"Output report must be {PassportUsb.OutputReportLength} bytes.", nameof(report65));
+			throw new ArgumentException($"Output report must be {UsbHid.OutputReportLength} bytes.", nameof(report65));
 		}
 
 		if (!WriteFile(_handle, report65, (uint)report65.Length, out uint written, IntPtr.Zero) || written != report65.Length)
 		{
-			throw new IOException($"Passport HID write failed (wrote {written} of {report65.Length}).");
+			throw new IOException($"HID write failed (wrote {written} of {report65.Length}).");
 		}
 	}
 
 	public byte[]? ReadReport(int timeoutMs)
 	{
-		// Opened without FILE_FLAG_OVERLAPPED, so ReadFile blocks. Bound it with a wait on the handle so a
-		// stalled device does not hang the caller.
-		if (WaitForSingleObject(_handle, (uint)Math.Max(0, timeoutMs)) != WAIT_OBJECT_0)
+		// The handle is synchronous, so ReadFile blocks until a report arrives. Waiting on the handle
+		// itself is useless (a file handle with no I/O in flight is always signaled), so the timeout is
+		// enforced by cancelling the blocked read from this thread with CancelIoEx.
+		//
+		// Windows requires the read buffer to be the HID InputReportByteLength, which always includes a
+		// leading report-id byte (0 for these devices) before the 64 data bytes; a 64-byte buffer makes
+		// ReadFile fail with ERROR_INVALID_USER_BUFFER.
+		var buffer = new byte[UsbHid.InputReportLength + 1];
+		var read = Task.Run(() =>
+		{
+			bool ok = ReadFile(_handle, buffer, (uint)buffer.Length, out uint count, IntPtr.Zero);
+			return (Ok: ok, Count: count, Error: ok ? 0 : Marshal.GetLastWin32Error());
+		});
+
+		if (!read.Wait(Math.Max(0, timeoutMs)))
+		{
+			CancelIoEx(_handle, IntPtr.Zero);
+			read.Wait(1000); // reap the cancelled read
+			return null;
+		}
+
+		var (success, readCount, error) = read.Result;
+		if (!success)
+		{
+			if (error == ERROR_OPERATION_ABORTED)
+			{
+				return null;
+			}
+			throw new IOException($"HID read failed (win32 error {error}).");
+		}
+		if (readCount <= 1)
 		{
 			return null;
 		}
 
-		var buffer = new byte[PassportUsb.InputReportLength];
-		if (!ReadFile(_handle, buffer, (uint)buffer.Length, out uint read, IntPtr.Zero))
-		{
-			throw new IOException("Passport HID read failed.");
-		}
-		if (read == 0)
-		{
-			return null;
-		}
-
-		return read == buffer.Length ? buffer : buffer[..(int)read];
+		// Strip the report-id byte; the caller sees the 64 data bytes the device sent.
+		return buffer[1..(int)readCount];
 	}
 
 	public void Dispose() => _handle.Dispose();
 
-	private static IEnumerable<string> EnumeratePassportPaths()
+	private static IEnumerable<string> EnumeratePaths(ushort vendorId, ushort productId)
 	{
 		HidD_GetHidGuid(out Guid hidGuid);
 		var deviceInfoSet = SetupDiGetClassDevs(ref hidGuid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
@@ -109,7 +125,7 @@ internal sealed class PassportHidWindows : IPassportHid
 			for (uint index = 0; SetupDiEnumDeviceInterfaces(deviceInfoSet, IntPtr.Zero, ref hidGuid, index, ref interfaceData); index++)
 			{
 				string? path = GetDevicePath(deviceInfoSet, ref interfaceData);
-				if (path is not null && MatchesPassport(path))
+				if (path is not null && Matches(path, vendorId, productId))
 				{
 					yield return path;
 				}
@@ -121,7 +137,7 @@ internal sealed class PassportHidWindows : IPassportHid
 		}
 	}
 
-	private static bool MatchesPassport(string devicePath)
+	private static bool Matches(string devicePath, ushort vendorId, ushort productId)
 	{
 		using var handle = CreateFile(devicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
 		if (handle.IsInvalid)
@@ -131,8 +147,8 @@ internal sealed class PassportHidWindows : IPassportHid
 
 		var attributes = new HIDD_ATTRIBUTES { Size = (uint)Marshal.SizeOf<HIDD_ATTRIBUTES>() };
 		return HidD_GetAttributes(handle, ref attributes)
-			&& attributes.VendorID == PassportUsb.VendorId
-			&& attributes.ProductID == PassportUsb.ProductId;
+			&& attributes.VendorID == vendorId
+			&& attributes.ProductID == productId;
 	}
 
 	private static string? TryReadSerial(string devicePath)
@@ -160,12 +176,15 @@ internal sealed class PassportHidWindows : IPassportHid
 		var detailBuffer = Marshal.AllocHGlobal((int)requiredSize);
 		try
 		{
+			// cbSize is the size of the fixed part of SP_DEVICE_INTERFACE_DETAIL_DATA (4 on 32-bit + padding),
+			// which is 8 on 64-bit due to alignment of the char[] that follows.
 			Marshal.WriteInt32(detailBuffer, IntPtr.Size == 8 ? 8 : 6);
 			if (!SetupDiGetDeviceInterfaceDetail(deviceInfoSet, ref interfaceData, detailBuffer, requiredSize, out _, IntPtr.Zero))
 			{
 				return null;
 			}
 
+			// The device path (wide string) follows the cbSize field.
 			return Marshal.PtrToStringUni(detailBuffer + 4);
 		}
 		finally
@@ -183,7 +202,7 @@ internal sealed class PassportHidWindows : IPassportHid
 	private const uint OPEN_EXISTING = 3;
 	private const uint DIGCF_PRESENT = 0x2;
 	private const uint DIGCF_DEVICEINTERFACE = 0x10;
-	private const uint WAIT_OBJECT_0 = 0x0;
+	private const int ERROR_OPERATION_ABORTED = 995;
 	private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
 	[StructLayout(LayoutKind.Sequential)]
@@ -235,5 +254,5 @@ internal sealed class PassportHidWindows : IPassportHid
 	private static extern bool WriteFile(SafeFileHandle handle, byte[] buffer, uint bytesToWrite, out uint bytesWritten, IntPtr overlapped);
 
 	[DllImport("kernel32.dll", SetLastError = true)]
-	private static extern uint WaitForSingleObject(SafeFileHandle handle, uint milliseconds);
+	private static extern bool CancelIoEx(SafeFileHandle handle, IntPtr overlapped);
 }

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using WalletWasabi.Hwi.Usb;
 using WalletWasabi.Logging;
 
 namespace WalletWasabi.Hwi.Coldcard;
@@ -13,10 +14,10 @@ namespace WalletWasabi.Hwi.Coldcard;
 /// </summary>
 public sealed class ColdcardTransport : IDisposable
 {
-	private readonly IColdcardHid _hid;
+	private readonly IUsbHid _hid;
 	private CkccEncryption? _encryption;
 
-	public ColdcardTransport(IColdcardHid hid)
+	public ColdcardTransport(IUsbHid hid)
 	{
 		_hid = hid;
 	}

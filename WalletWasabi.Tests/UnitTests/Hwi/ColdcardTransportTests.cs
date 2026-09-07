@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using WalletWasabi.Hwi.Coldcard;
+using WalletWasabi.Hwi.Usb;
 using Xunit;
 
 namespace WalletWasabi.Tests.UnitTests.Hwi;
@@ -149,7 +150,7 @@ public class ColdcardTransportTests
 		Assert.True(transport.IsHealthy);
 	}
 
-	private sealed class FakeHid : IColdcardHid
+	private sealed class FakeHid : IUsbHid
 	{
 		private readonly Queue<byte[]> _toRead;
 		public List<byte[]> Written { get; } = new();

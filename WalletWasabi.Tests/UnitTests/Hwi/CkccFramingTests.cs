@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using WalletWasabi.Hwi.Coldcard;
+using WalletWasabi.Hwi.Usb;
 using Xunit;
 
 namespace WalletWasabi.Tests.UnitTests.Hwi;
@@ -19,7 +20,7 @@ public class CkccFramingTests
 
 	private static byte[] Report(byte[] payload, bool last)
 	{
-		var report = new byte[ColdcardUsb.InputReportLength];
+		var report = new byte[UsbHid.InputReportLength];
 		report[0] = (byte)(payload.Length | (last ? LastFlag : 0));
 		payload.CopyTo(report, 1);
 		return report;

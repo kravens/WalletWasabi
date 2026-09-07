@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using NBitcoin;
 using WalletWasabi.Hwi.Passport;
+using WalletWasabi.Hwi.Usb;
 using Xunit;
 
 namespace WalletWasabi.Tests.UnitTests.Hwi;
@@ -132,7 +133,7 @@ public class PassportProtocolTests
 	}
 
 	/// <summary>A fake HID channel: buffers written reports, reassembles the request, and serves a canned reply.</summary>
-	private sealed class FakeHid : IPassportHid
+	private sealed class FakeHid : IUsbHid
 	{
 		private readonly Func<byte, (byte Status, byte[] Payload)> _responder;
 		private readonly Action<byte[]>? _onRequest;

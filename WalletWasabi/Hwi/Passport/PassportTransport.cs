@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using WalletWasabi.Hwi.Usb;
 
 namespace WalletWasabi.Hwi.Passport;
 
@@ -13,9 +14,9 @@ public sealed class PassportTransport : IDisposable
 {
 	public const byte ProtocolVersion = 1;
 
-	private readonly IPassportHid _hid;
+	private readonly IUsbHid _hid;
 
-	public PassportTransport(IPassportHid hid)
+	public PassportTransport(IUsbHid hid)
 	{
 		_hid = hid;
 	}

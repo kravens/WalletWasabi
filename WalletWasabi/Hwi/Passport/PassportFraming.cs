@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using WalletWasabi.Hwi.Usb;
 
 namespace WalletWasabi.Hwi.Passport;
 
@@ -18,7 +19,7 @@ internal static class PassportFraming
 	/// <summary>Splits a frame into 65-byte output reports (leading report-id 0 + 64-byte body).</summary>
 	public static IEnumerable<byte[]> PackRequest(byte[] frame)
 	{
-		var init = new byte[PassportUsb.OutputReportLength];
+		var init = new byte[UsbHid.OutputReportLength];
 		// init[0] = report id 0 (Windows HID prefix); body starts at init[1].
 		init[1] = InitMarker;
 		init[2] = (byte)(frame.Length & 0xff);
@@ -31,7 +32,7 @@ internal static class PassportFraming
 		byte seq = 1;
 		while (offset < frame.Length)
 		{
-			var report = new byte[PassportUsb.OutputReportLength];
+			var report = new byte[UsbHid.OutputReportLength];
 			report[1] = seq++;
 			int chunk = Math.Min(frame.Length - offset, ContDataLen);
 			Array.Copy(frame, offset, report, 2, chunk);

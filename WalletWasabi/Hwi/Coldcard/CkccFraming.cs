@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using WalletWasabi.Hwi.Usb;
 
 namespace WalletWasabi.Hwi.Coldcard;
 
@@ -28,7 +29,7 @@ public static class CkccFraming
 		do
 		{
 			int here = Math.Min(PayloadPerReport, message.Length - offset);
-			var report = new byte[ColdcardUsb.OutputReportLength]; // [0]=report id 0
+			var report = new byte[UsbHid.OutputReportLength]; // [0]=report id 0
 			bool last = offset + here == message.Length;
 			report[1] = (byte)(here | (last ? LastFlag : 0) | (encrypted ? EncryptFlag : 0));
 			Array.Copy(message, offset, report, 2, here);
@@ -48,7 +49,7 @@ public static class CkccFraming
 
 			// A report always carries a header byte plus room for the 63 payload bytes the length field
 			// can describe. A short read would otherwise index past the end of the buffer.
-			if (report.Length < ColdcardUsb.InputReportLength)
+			if (report.Length < UsbHid.InputReportLength)
 			{
 				throw new IOException($"Coldcard sent a truncated {report.Length}-byte HID report.");
 			}
