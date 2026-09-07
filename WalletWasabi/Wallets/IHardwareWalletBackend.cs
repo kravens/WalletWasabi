@@ -1,27 +1,32 @@
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Models;
 using WalletWasabi.WabiSabi.Client;
 
 namespace WalletWasabi.Wallets;
+
+/// <summary>What a device reports about the policy it is running, in its own words plus the hash that identifies it.</summary>
+public record DevicePolicyReport(string Summary, string PolicyHash);
 
 /// <summary>
 /// What one hardware vendor can do for a coinjoin wallet. Vendors share nothing at the device level - one
 /// speaks protobuf over an HTTP bridge, another an encrypted HID protocol, another talks to a daemon - so
 /// what is shared here is what an operation <i>means</i>, not how it travels.
 ///
-/// Only <see cref="ImportAsync"/> and <see cref="AuthorizeCoinJoinAsync"/> have to be written: everything
-/// else describes something a vendor may simply not have, and defaults to "I do not do that", which lets
-/// <see cref="HardwareWalletService"/> fall back to HWI. Adding a vendor is a value in
-/// <see cref="HardwareCoinJoinVendor"/>, an entry in <c>VendorOf</c>, one class here, and an
-/// <see cref="IKeyChain"/>.
+/// Only <see cref="AuthorizeCoinJoinAsync"/> has to be written: everything else describes something a vendor
+/// may simply not have, and defaults to "I do not do that", which lets <see cref="HardwareWalletService"/>
+/// fall back to HWI. Adding a vendor is a value in <see cref="HardwareCoinJoinVendor"/>, an entry in
+/// <c>VendorOf</c>, one class here, and an <see cref="IKeyChain"/>.
 /// </summary>
-/// <summary>What a device reports about the policy it is running, in its own words plus the hash that
-/// identifies it.</summary>
-public record DevicePolicyReport(string Summary, string PolicyHash);
-
 internal interface IHardwareWalletBackend : IDisposable
 {
 	HardwareCoinJoinVendor Vendor { get; }
+
+	/// <summary>True when HWI cannot read this vendor's device at all, so an import goes over the vendor's own transport even without coinjoin.</summary>
+	bool IsUnknownToHwi => false;
+
+	/// <summary>A device HWI cannot see, found over the vendor's own transport; null when none answers.</summary>
+	Task<HwiEnumerateEntry?> TryDetectAsync(CancellationToken cancellationToken) => Task.FromResult<HwiEnumerateEntry?>(null);
 
 	/// <summary>
 	/// Reads the wallet's accounts over the vendor's own transport, for a vendor that keeps something HWI

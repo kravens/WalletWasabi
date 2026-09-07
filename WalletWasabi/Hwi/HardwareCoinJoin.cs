@@ -21,8 +21,7 @@ public enum HardwareCoinJoinVendor
 /// <summary>
 /// The vendor-neutral gates. Everything the coinjoin flow needs to know about "is this wallet signed by a
 /// device, and which one" lives here, so adding a vendor is: a value in <see cref="HardwareCoinJoinVendor"/>,
-/// an entry in <see cref="VendorOf"/>, a case in <c>Wallet.AuthorizeHardwareCoinJoinAsync</c>, and an
-/// <c>IKeyChain</c> implementation. Behaviour that is really about the SLIP-25 account model (destinations,
+/// an entry in <see cref="VendorOf"/>, a backend class, and an <c>IKeyChain</c> implementation. Behaviour that is really about the SLIP-25 account model (destinations,
 /// account splitting, taproot-only coin selection) stays keyed on the account shape, not on the vendor.
 /// </summary>
 public static class HardwareCoinJoin
@@ -68,7 +67,8 @@ public static class HardwareCoinJoin
 			HardwareWalletModels.Coldcard
 				or HardwareWalletModels.Coldcard_Simulator => HardwareCoinJoinVendor.Coldcard,
 			HardwareWalletModels.Foundation_Passport => HardwareCoinJoinVendor.PassportPrime,
-			// Krux is not in HWI's model list yet; add it here with its model.
+			HardwareWalletModels.Krux
+				or HardwareWalletModels.SabiSigner => HardwareCoinJoinVendor.Krux,
 			_ => HardwareCoinJoinVendor.None,
 		};
 

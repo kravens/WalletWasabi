@@ -8,6 +8,7 @@ using WalletWasabi.Fluent.Extensions;
 using WalletWasabi.Fluent.ViewModels.Navigation;
 using WalletWasabi.Logging;
 using WalletWasabi.Wallets;
+using WalletWasabi.Hwi.Models;
 
 namespace WalletWasabi.Fluent.ViewModels.AddWallet.HardwareWallet;
 
@@ -17,6 +18,7 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 	[AutoNotify] private bool _enableCoinjoin;
 	[AutoNotify] private bool _isBridgeUnavailable;
 	[AutoNotify] private string? _addressToConfirm;
+	private readonly HwiEnumerateEntry _device;
 
 	public DetectedHardwareWalletViewModel(UiContext uiContext, WalletCreationOptions.ConnectToHardwareWallet options) : base(uiContext)
 	{
@@ -24,6 +26,7 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 
 		ArgumentException.ThrowIfNullOrEmpty(walletName);
 		ArgumentNullException.ThrowIfNull(device);
+		_device = device;
 
 		WalletName = walletName;
 
@@ -111,7 +114,7 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 				try
 				{
 					using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-					IsBridgeUnavailable = !await UiContext.HardwareWalletInterface.IsCoinJoinTransportAvailableAsync(cts.Token);
+					IsBridgeUnavailable = !await UiContext.HardwareWalletInterface.IsCoinJoinTransportAvailableAsync(_device, cts.Token);
 				}
 				catch (Exception ex)
 				{

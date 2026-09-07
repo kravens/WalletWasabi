@@ -66,4 +66,11 @@ public enum HardwareWalletModels
 
 	[FriendlyName("Jade")]
 	Jade,
+
+	// Not HWI models: found over their own bridge, see the Krux backend.
+	[FriendlyName("Krux")]
+	Krux,
+
+	[FriendlyName("SabiSigner")]
+	SabiSigner,
 }

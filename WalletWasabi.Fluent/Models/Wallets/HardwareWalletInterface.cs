@@ -20,6 +20,6 @@ public class HardwareWalletInterface
 		_services.HardwareWallets.InitializeAsync(device, cancelToken);
 
 	/// <summary>Whether a device that signs coinjoins can be reached, to warn before offering it.</summary>
-	public Task<bool> IsCoinJoinTransportAvailableAsync(CancellationToken cancelToken) =>
-		_services.HardwareWallets.IsCoinJoinTransportAvailableAsync(cancelToken);
+	public Task<bool> IsCoinJoinTransportAvailableAsync(HwiEnumerateEntry device, CancellationToken cancelToken) =>
+		_services.HardwareWallets.IsCoinJoinTransportAvailableAsync(device, cancelToken);
 }

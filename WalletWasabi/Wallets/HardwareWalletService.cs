@@ -41,19 +41,9 @@ public class HardwareWalletService : IDisposable
 	/// <summary>How the device is currently reached.</summary>
 	public HardwareWalletTransport TransportStatus => _transportStatus;
 
-	/// <summary>Whether a device that signs coinjoins can be reached, to warn before offering it.</summary>
-	public async Task<bool> IsCoinJoinTransportAvailableAsync(CancellationToken cancellationToken)
-	{
-		foreach (var backend in _backends.Values)
-		{
-			if (await backend.IsTransportAvailableAsync(cancellationToken).ConfigureAwait(false))
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
+	/// <summary>Whether the transport this device signs coinjoins over can be reached, to warn before offering it.</summary>
+	public Task<bool> IsCoinJoinTransportAvailableAsync(HwiEnumerateEntry device, CancellationToken cancellationToken) =>
+		_backends.GetValueOrDefault(device.Model.VendorOf())?.IsTransportAvailableAsync(cancellationToken) ?? Task.FromResult(false);
 
 	/// <summary>The backend for this wallet's vendor, or null when no device signs its coinjoins.</summary>
 	private IHardwareWalletBackend? BackendFor(KeyManager keyManager) =>
@@ -148,6 +138,12 @@ public class HardwareWalletService : IDisposable
 				"The fee-rate cap is enforced by Wasabi - the device policy has no concept of one. The limits "
 				+ "below it are enforced by the device: how much of your value may leave in a single "
 				+ "transaction, and how many transactions it will sign in total and per period.",
+			HardwareCoinJoinVendor.Krux =>
+				"The budget you approved on the device - rounds, sats per round and in total - is enforced by the "
+				+ "device; the fee-rate cap and the round budget below are enforced by Wasabi.",
+			HardwareCoinJoinVendor.PassportPrime =>
+				"The round budget, and a total fee budget derived from the fee-rate cap, are shown on the device and "
+				+ "enforced there; the fee-rate cap itself is enforced by Wasabi.",
 			HardwareCoinJoinVendor.None => "",
 			_ => "Enforced by Wasabi for this device.",
 		};
@@ -182,11 +178,20 @@ public class HardwareWalletService : IDisposable
 		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 		using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
 
-		var detectedHardwareWallets = (await new HwiClient(_network).EnumerateAsync(timeoutCts.Token).ConfigureAwait(false)).ToArray();
+		var detected = (await new HwiClient(_network).EnumerateAsync(timeoutCts.Token).ConfigureAwait(false)).ToList();
 
 		cancellationToken.ThrowIfCancellationRequested();
 
-		return detectedHardwareWallets;
+		// Devices HWI cannot see are found over their vendor's own transport.
+		foreach (var backend in _backends.Values)
+		{
+			if (await backend.TryDetectAsync(timeoutCts.Token).ConfigureAwait(false) is { } ownDevice)
+			{
+				detected.Add(ownDevice);
+			}
+		}
+
+		return [.. detected];
 	}
 
 	/// <summary>Runs the device's initial setup, for a device that reports it has no seed yet.</summary>
@@ -222,8 +227,8 @@ public class HardwareWalletService : IDisposable
 		using var genCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
 
 		var vendor = device.Model.VendorOf();
-		if (enableCoinjoin && _backends.GetValueOrDefault(vendor) is { } backend
-			&& await backend.TryImportAsync(fingerprint, walletFilePath, enableCoinjoin: true, addressToConfirm, genCts.Token).ConfigureAwait(false) is { } fromDevice)
+		if (_backends.GetValueOrDefault(vendor) is { } backend && (enableCoinjoin || backend.IsUnknownToHwi)
+			&& await backend.TryImportAsync(fingerprint, walletFilePath, enableCoinjoin, addressToConfirm, genCts.Token).ConfigureAwait(false) is { } fromDevice)
 		{
 			return fromDevice;
 		}
