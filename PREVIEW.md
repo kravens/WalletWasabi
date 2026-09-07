@@ -23,15 +23,25 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 - Attended, no policy: the device asks on screen for every ownership proof (path, address, commitment digest) and for the round's PSBT. Slower — one confirmation per coin — but it needs no HSM setup and is the way to try a round before committing to a policy.
 - **Coldcard Q: do not flash this firmware.** The Q has no HSM mode, and an earlier experimental Q build bricked a device: a validly signed image that fails before login is unrecoverable on a retail Q. The attended flow is verified on the Q *simulator* only. A Q image waits on Coinkite confirming a recovery path.
 
-### Foundation Passport Prime — firmware work required
-- Dev demo: [Coinjoin Signer on Foundation's app showcase](https://foundation.xyz/app-showcase/coinjoin-signer).
-- **Stock KeyOS is not compatible.** Requires a custom KeyOS firmware build carrying the coinjoin protocol messages; without it the device will not respond.
-- USB support is Windows-first for now; treat this integration as a developer demo.
+### Foundation Passport Prime — protocol v2, nothing verified on hardware yet
+- Dev demo: [Coinjoin Signer on Foundation's app showcase](https://foundation.xyz/app-showcase/coinjoin-signer). The app and its wire protocol live in the `coinjoin.nl` repository under `passport/coinjoin-signer`.
+- The wallet speaks the app's **wallet-rpc protocol v2**: the session you approve on the device is a random token every request carries, the fee budget you approve is the **total for the whole session** (the wallet composes it as your fee-rate cap applied to every round of your round budget), the session lasts 12 hours, and taproot is signed when the firmware says it can.
+- **Stock KeyOS is not compatible**, and the current KeyOS SDK (0.4.0) has no host transport an app could carry coinjoin rounds over. Nothing in this build has been run against a Passport: the USB identity is a placeholder, and the HID transport on Windows, Linux and macOS is the Coldcard's, proven there but not with a Passport. Treat this integration as a developer demo whose wire format is pinned by tests on both sides.
 
-### Krux (e.g. WonderMV) — developer demo
-- Requires a Krux device flashed with the coinjoin signing extension and the `kruxd` companion daemon running on the host (default port 21326).
-- The session policy and round budget are approved physically on the device; the wallet only connects to an already-authorized session.
-- There is no import UI yet: mark an imported watch-only hardware wallet as Krux-backed by setting `"CoinJoinVendor": 3` in its wallet JSON file.
+### Krux and SabiSigner — via kruxd
+- Requires the `kruxd` companion daemon from the `coinjoin.nl` repository running on the host (port 21326), driving either a Krux flashed with the coinjoin signing extension or a [SabiSigner](https://github.com/kravens/SabiSigner) (`kruxd.py sabi`). Update kruxd: this build reads the accounts over its new `/xpub` endpoint.
+- The session policy and round budget are approved physically on the device; the wallet only connects to an already-authorized session, and refuses one the device has not approved or has used up.
+- **Import from the connect screen:** while kruxd answers, the device is listed like any other. The import reads both accounts over the bridge, pinned to the fingerprint of the session the device approved. kruxd cannot make the device show an address, so the wallet shows the first receive address instead: **compare it in the device's own address explorer before funding**.
+- A SabiSigner signs **taproot only** in a round, so imported wallets receive to taproot by default; coins of any other type stay out of rounds.
+- Importing with the coinjoin box unchecked gives a plain watch-only wallet; re-import with it checked to coinjoin.
+
+## What changed since Preview 3
+
+- **Rebuilt on the trimmed Trezor branch** (this is the `v2.8.2.4` build): the same behaviour as Preview 3 in about 600 fewer lines.
+- **SabiSigner and Krux are found and imported from the connect screen** (and from `importhardwarewallet` over RPC) while kruxd answers, instead of by hand-editing the wallet file. Every bridge call has a timeout, an unapproved or spent session is refused before a round starts, and coins of a type the device will not sign stay out of rounds.
+- **Passport Prime speaks protocol v2** of its coinjoin app, see the section above; the session is revoked, and the device zeroizes its keys, whenever the wallet lets go of it.
+- **Coldcard and Passport share one HID transport**, so the Passport client gains Linux and macOS and loses its Windows-only copy.
+- **The connect screen's transport check asks the right vendor.** It used to answer yes as soon as any vendor's transport was up, which hid the Trezor bridge warning.
 
 ## What changed since Preview 2
 
