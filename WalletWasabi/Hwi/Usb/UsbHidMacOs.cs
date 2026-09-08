@@ -63,12 +63,12 @@ internal sealed class UsbHidMacOs : IUsbHid
 		}
 	}
 
-	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId) =>
-		EnumerateDevices(vendorId, productId).Select(x => x.Serial).Where(x => x is not null).Cast<string>().ToList();
+	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId, ushort? usagePage) =>
+		EnumerateDevices(vendorId, productId, usagePage).Select(x => x.Serial).Where(x => x is not null).Cast<string>().ToList();
 
-	public static UsbHidMacOs? Open(ushort vendorId, ushort productId, string? serialNumber)
+	public static UsbHidMacOs? Open(ushort vendorId, ushort productId, string? serialNumber, ushort? usagePage)
 	{
-		foreach (var (device, serial) in EnumerateDevices(vendorId, productId))
+		foreach (var (device, serial) in EnumerateDevices(vendorId, productId, usagePage))
 		{
 			if (serialNumber is not null && serial != serialNumber)
 			{
@@ -92,7 +92,7 @@ internal sealed class UsbHidMacOs : IUsbHid
 	}
 
 	/// <summary>Every attached device matching the vendor and product, with its serial.</summary>
-	private static IEnumerable<(nint Device, string? Serial)> EnumerateDevices(ushort vendorId, ushort productId)
+	private static IEnumerable<(nint Device, string? Serial)> EnumerateDevices(ushort vendorId, ushort productId, ushort? usagePage)
 	{
 		var manager = IOHIDManagerCreate(nint.Zero, 0);
 		if (manager == nint.Zero)
@@ -100,7 +100,7 @@ internal sealed class UsbHidMacOs : IUsbHid
 			yield break;
 		}
 
-		var matching = CreateMatchingDictionary(vendorId, productId);
+		var matching = CreateMatchingDictionary(vendorId, productId, usagePage);
 		IOHIDManagerSetDeviceMatching(manager, matching);
 		CFRelease(matching);
 
@@ -129,11 +129,15 @@ internal sealed class UsbHidMacOs : IUsbHid
 		CFRelease(manager);
 	}
 
-	private static nint CreateMatchingDictionary(ushort vendorId, ushort productId)
+	private static nint CreateMatchingDictionary(ushort vendorId, ushort productId, ushort? usagePage)
 	{
 		var dict = CFDictionaryCreateMutable(nint.Zero, 0, nint.Zero, nint.Zero);
 		SetNumber(dict, "VendorID", vendorId);
 		SetNumber(dict, "ProductID", productId);
+		if (usagePage is { } page)
+		{
+			SetNumber(dict, "PrimaryUsagePage", page);
+		}
 		return dict;
 
 		static void SetNumber(nint dict, string key, int value)

@@ -29,12 +29,12 @@ internal sealed class UsbHidLinux : IUsbHid
 		_fd = fd;
 	}
 
-	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId) =>
-		EnumerateDevices(vendorId, productId).Select(x => x.Serial).Where(x => x is not null).Cast<string>().ToList();
+	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId, ushort? usagePage) =>
+		EnumerateDevices(vendorId, productId, usagePage).Select(x => x.Serial).Where(x => x is not null).Cast<string>().ToList();
 
-	public static UsbHidLinux? Open(ushort vendorId, ushort productId, string? serialNumber)
+	public static UsbHidLinux? Open(ushort vendorId, ushort productId, string? serialNumber, ushort? usagePage)
 	{
-		foreach (var (node, serial) in EnumerateDevices(vendorId, productId))
+		foreach (var (node, serial) in EnumerateDevices(vendorId, productId, usagePage))
 		{
 			if (serialNumber is not null && serial != serialNumber)
 			{
@@ -58,12 +58,12 @@ internal sealed class UsbHidLinux : IUsbHid
 		return null;
 	}
 
-	/// <summary>Every hidraw node whose uevent reports the wanted vendor and product, with the serial the
-	/// same file carries as HID_UNIQ.</summary>
+	/// <summary>Every hidraw node whose uevent reports the wanted vendor and product (and, when asked, whose
+	/// report descriptor opens with the wanted usage page), with the serial the uevent carries as HID_UNIQ.</summary>
 	/// <param name="classRoot">Where to look. Only tests pass anything else: the parsing is the part that
 	/// can quietly be wrong (hex widths, a missing HID_UNIQ, an unrelated device sitting alongside), and it
 	/// cannot be covered otherwise without a device plugged into a Linux box.</param>
-	internal static IEnumerable<(string Node, string? Serial)> EnumerateDevices(ushort vendorId, ushort productId, string classRoot = HidrawClass)
+	internal static IEnumerable<(string Node, string? Serial)> EnumerateDevices(ushort vendorId, ushort productId, ushort? usagePage = null, string classRoot = HidrawClass)
 	{
 		if (!Directory.Exists(classRoot))
 		{
@@ -94,10 +94,28 @@ internal sealed class UsbHidLinux : IUsbHid
 				}
 			}
 
-			if (match)
+			if (match && (usagePage is null || UsagePageOf(Path.Combine(entry, "device", "report_descriptor")) == usagePage))
 			{
 				yield return ($"/dev/{name}", string.IsNullOrEmpty(serial) ? null : serial);
 			}
+		}
+	}
+
+	/// <summary>The Usage Page item a report descriptor opens with: <c>05 pp</c> or <c>06 lo hi</c>; null when unreadable.</summary>
+	private static ushort? UsagePageOf(string reportDescriptorPath)
+	{
+		try
+		{
+			return File.ReadAllBytes(reportDescriptorPath) switch
+			{
+				[0x05, var page, ..] => page,
+				[0x06, var low, var high, ..] => (ushort)(low | (high << 8)),
+				_ => null,
+			};
+		}
+		catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+		{
+			return null;
 		}
 	}
 

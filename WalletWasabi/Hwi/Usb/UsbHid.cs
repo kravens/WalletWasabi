@@ -25,42 +25,43 @@ public static class UsbHid
 	public const int InputReportLength = 64;
 
 	/// <summary>Opens the connected device with this USB identity, optionally pinned to a serial number; null when none is attached.</summary>
-	public static IUsbHid? TryOpen(ushort vendorId, ushort productId, string? serialNumber = null)
+	/// <param name="usagePage">The HID usage page of the wanted interface, for a device that exposes several (a Passport Prime also has a FIDO interface); null takes any.</param>
+	public static IUsbHid? TryOpen(ushort vendorId, ushort productId, string? serialNumber = null, ushort? usagePage = null)
 	{
 		if (OperatingSystem.IsWindows())
 		{
-			return UsbHidWindows.Open(vendorId, productId, serialNumber);
+			return UsbHidWindows.Open(vendorId, productId, serialNumber, usagePage);
 		}
 
 		if (OperatingSystem.IsLinux())
 		{
-			return UsbHidLinux.Open(vendorId, productId, serialNumber);
+			return UsbHidLinux.Open(vendorId, productId, serialNumber, usagePage);
 		}
 
 		if (OperatingSystem.IsMacOS())
 		{
-			return UsbHidMacOs.Open(vendorId, productId, serialNumber);
+			return UsbHidMacOs.Open(vendorId, productId, serialNumber, usagePage);
 		}
 
 		throw new PlatformNotSupportedException($"The USB HID transport has no implementation for {RuntimeInformation.OSDescription}.");
 	}
 
 	/// <summary>Serial numbers of the connected devices with this USB identity (empty when none are attached).</summary>
-	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId)
+	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId, ushort? usagePage = null)
 	{
 		if (OperatingSystem.IsWindows())
 		{
-			return UsbHidWindows.Enumerate(vendorId, productId);
+			return UsbHidWindows.Enumerate(vendorId, productId, usagePage);
 		}
 
 		if (OperatingSystem.IsLinux())
 		{
-			return UsbHidLinux.Enumerate(vendorId, productId);
+			return UsbHidLinux.Enumerate(vendorId, productId, usagePage);
 		}
 
 		if (OperatingSystem.IsMacOS())
 		{
-			return UsbHidMacOs.Enumerate(vendorId, productId);
+			return UsbHidMacOs.Enumerate(vendorId, productId, usagePage);
 		}
 
 		return [];

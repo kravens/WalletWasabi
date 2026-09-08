@@ -24,11 +24,15 @@ public class ColdcardHidLinuxTests : IDisposable
 {
 	private readonly string _root = Path.Combine(Path.GetTempPath(), "hidraw-test-" + Guid.NewGuid().ToString("N"));
 
-	/// <summary>Writes the one file the enumerator reads: <c>&lt;root&gt;/hidrawN/device/uevent</c>.</summary>
-	private void FakeDevice(string node, string? hidId, string? serial = null)
+	/// <summary>Writes what the enumerator reads: <c>&lt;root&gt;/hidrawN/device/uevent</c>, and the report descriptor when given.</summary>
+	private void FakeDevice(string node, string? hidId, string? serial = null, byte[]? reportDescriptor = null)
 	{
 		var dir = Path.Combine(_root, node, "device");
 		Directory.CreateDirectory(dir);
+		if (reportDescriptor is not null)
+		{
+			File.WriteAllBytes(Path.Combine(dir, "report_descriptor"), reportDescriptor);
+		}
 
 		var lines = new System.Collections.Generic.List<string> { "DRIVER=hid-generic" };
 		if (hidId is not null)
@@ -50,7 +54,7 @@ public class ColdcardHidLinuxTests : IDisposable
 		// The real thing: bus 0003, vendor d13e, product cc10, zero-padded to eight digits.
 		FakeDevice("hidraw3", "0003:0000D13E:0000CC10", "2050395F4833");
 
-		var found = UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root).ToList();
+		var found = UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, classRoot: _root).ToList();
 
 		var (node, serial) = Assert.Single(found);
 		Assert.Equal("/dev/hidraw3", node);
@@ -66,7 +70,7 @@ public class ColdcardHidLinuxTests : IDisposable
 		FakeDevice("hidraw2", null);
 		FakeDevice("hidraw4", "0003:0000D13E:0000CC10", "2050395F4833");
 
-		var found = UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root).ToList();
+		var found = UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, classRoot: _root).ToList();
 
 		Assert.Equal("/dev/hidraw4", Assert.Single(found).Node);
 	}
@@ -78,7 +82,7 @@ public class ColdcardHidLinuxTests : IDisposable
 		// reporting it with none — Open() without a serial takes the first match.
 		FakeDevice("hidraw0", "0003:0000D13E:0000CC10");
 
-		var (node, serial) = Assert.Single(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root).ToList());
+		var (node, serial) = Assert.Single(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, classRoot: _root).ToList());
 
 		Assert.Equal("/dev/hidraw0", node);
 		Assert.Null(serial);
@@ -94,24 +98,28 @@ public class ColdcardHidLinuxTests : IDisposable
 		FakeDevice("hidraw2", "0000D13E:0000CC10:0003");
 		FakeDevice("hidraw3", "");
 
-		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root));
+		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, classRoot: _root));
 	}
 
 	[Fact]
-	public void APassportIsFoundAsAPassportAndNotAsAColdcard()
+	public void APassportIsFoundByItsWalletInterfaceAndNotAsAColdcard()
 	{
-		// The same enumerator serves both devices, so a Passport must show up under its own identity only.
-		FakeDevice("hidraw5", $"0003:{PassportUsb.VendorId:X8}:{PassportUsb.ProductId:X8}", "PP1");
+		// A Prime is one USB device with several HID interfaces; only the one whose report descriptor opens
+		// with the vendor usage page is the wallet-rpc one. The FIDO interface (usage page 0xF1D0) shares the
+		// vendor and product ids and must not be picked up.
+		FakeDevice("hidraw5", $"0003:{PassportUsb.VendorId:X8}:{PassportUsb.ProductId:X8}", "PP1", [0x06, 0xD0, 0xF1, 0x09, 0x01]);
+		FakeDevice("hidraw6", $"0003:{PassportUsb.VendorId:X8}:{PassportUsb.ProductId:X8}", "PP1", [0x06, 0x00, 0xFF, 0x09, 0x01]);
 
-		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, _root));
-		Assert.Equal("PP1", Assert.Single(UsbHidLinux.EnumerateDevices(PassportUsb.VendorId, PassportUsb.ProductId, _root).ToList()).Serial);
+		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, classRoot: _root));
+		Assert.Equal("/dev/hidraw6", Assert.Single(UsbHidLinux.EnumerateDevices(PassportUsb.VendorId, PassportUsb.ProductId, PassportUsb.UsagePage, _root).ToList()).Node);
+		Assert.Equal(2, UsbHidLinux.EnumerateDevices(PassportUsb.VendorId, PassportUsb.ProductId, classRoot: _root).Count());
 	}
 
 	[Fact]
 	public void AMissingSysfsIsNotAnError()
 	{
 		// Windows, macOS, or a kernel without HID support — as WSL2's stock kernel is.
-		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, Path.Combine(_root, "does-not-exist")));
+		Assert.Empty(UsbHidLinux.EnumerateDevices(ColdcardUsb.VendorId, ColdcardUsb.ProductId, classRoot: Path.Combine(_root, "does-not-exist")));
 	}
 
 	public void Dispose()
