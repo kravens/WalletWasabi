@@ -340,4 +340,20 @@ public class HardwareWalletServiceTests
 		Assert.Equal(new FeeRate(2m), keyChain.MaxMiningFeeRate);
 		Assert.Equal(50, keyChain.MinRoundInputs);
 	}
+
+	[Fact]
+	public void ASerialPortHwiCouldNotOpenIsNotADevice()
+	{
+		// A BTClock on /dev/ttyACM0, reported by HWI's Jade probe as a Jade it could not open.
+		var probe = new HwiEnumerateEntry(HardwareWalletModels.Jade, "/dev/ttyACM0", null, null, false, false, "Could not open client or get fingerprint information: [Errno 13] Permission denied", HwiErrorCode.UnknownError);
+		Assert.True(probe.IsFailedProbe());
+
+		// Real devices that are locked, waiting for a passphrase, or empty carry no fingerprint either, and stay.
+		var locked = new HwiEnumerateEntry(HardwareWalletModels.Trezor_T, "webusb:001", null, null, true, false, "Could not open client", HwiErrorCode.DeviceNotReady);
+		var passphrase = new HwiEnumerateEntry(HardwareWalletModels.Trezor_T, "webusb:001", null, null, false, true, "Could not open client", HwiErrorCode.UnknownError);
+		var empty = new HwiEnumerateEntry(HardwareWalletModels.Coldcard, "3-5:1.3", null, null, false, false, "Not initialized", HwiErrorCode.DeviceNotInitialized);
+		Assert.False(locked.IsFailedProbe());
+		Assert.False(passphrase.IsFailedProbe());
+		Assert.False(empty.IsFailedProbe());
+	}
 }
