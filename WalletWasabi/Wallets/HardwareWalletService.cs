@@ -182,7 +182,9 @@ public class HardwareWalletService : IDisposable
 		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 		using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
 
-		var detected = (await new HwiClient(_network).EnumerateAsync(timeoutCts.Token).ConfigureAwait(false)).ToList();
+		var detected = (await new HwiClient(_network).EnumerateAsync(timeoutCts.Token).ConfigureAwait(false))
+			.Where(device => !device.IsFailedProbe())
+			.ToList();
 
 		cancellationToken.ThrowIfCancellationRequested();
 
