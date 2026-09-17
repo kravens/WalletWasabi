@@ -71,6 +71,14 @@ public class HwiEnumerateEntry
 		};
 	}
 
+	/// <summary>
+	/// HWI probes every serial port for a Jade and lists one it could not open as if it were a device. Such an
+	/// entry names no device and asks for nothing (no PIN, no passphrase), so there is nothing a user can do
+	/// with it; a real device that is merely locked or empty says so and is kept.
+	/// </summary>
+	public bool IsFailedProbe() =>
+		Fingerprint is null && Code == HwiErrorCode.UnknownError && NeedsPinSent is not true && NeedsPassphraseSent is not true;
+
 	public bool IsInitialized()
 	{
 		// Check for error message, too, not only code, because the currently released version doesn't have error code. This can be removed if HWI > 1.0.1 version is updated.
