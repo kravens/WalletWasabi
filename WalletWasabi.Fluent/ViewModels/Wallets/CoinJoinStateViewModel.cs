@@ -114,7 +114,7 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 			? State.WaitingForAutoStart
 			: State.StoppedOrPaused;
 
-		if (wallet.HasSeparateCoinJoinAccount)
+		if (wallet.CoinJoinNeedsDeviceAuthorization)
 		{
 			// Starting coinjoin requires a confirmation on the device, so it never starts automatically.
 			initialState = State.StoppedOrPaused;
@@ -153,7 +153,7 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 
 			// The same dialog flow users know from sending with a hardware wallet: Continue,
 			// then hold-to-confirm on the device. The coinjoin only starts when the device agreed.
-			if (wallet.HasSeparateCoinJoinAccount
+			if (wallet.CoinJoinNeedsDeviceAuthorization
 				&& !await UiContext.Navigate().To().CoinJoinAuthDialog(
 					walletCoinjoinModel,
 					wallet.Settings.WalletType,
