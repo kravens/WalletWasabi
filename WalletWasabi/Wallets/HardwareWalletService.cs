@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Models;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Wallets.Backends;
@@ -108,6 +109,56 @@ public class HardwareWalletService : IDisposable
 		{
 			throw new ArgumentOutOfRangeException(nameof(maxMiningFeeRate), maxMiningFeeRate, feeRateError);
 		}
+	}
+
+	/// <summary>Whether this wallet's device enforces limits of its own beyond the round budget - how much value may leave, how often, how large a round must be. Only a device running a policy has them.</summary>
+	public static bool HasDevicePolicyLimits(KeyManager keyManager) =>
+		keyManager.CoinJoinVendor is HardwareCoinJoinVendor.Coldcard;
+
+	/// <summary>
+	/// Whether the wallet's saved limits differ from the policy its device is actually enforcing. A device
+	/// policy cannot be changed while it runs - deliberately, since a host that could end it could also drop
+	/// every limit - so a value edited afterwards is saved and simply not applied until the device restarts.
+	/// False before any policy has been approved, when there is nothing to disagree with.
+	/// </summary>
+	public static bool IsDevicePolicyOutOfSync(KeyManager keyManager) =>
+		HasDevicePolicyLimits(keyManager)
+		&& keyManager.ColdcardApprovedPolicyFingerprint is { Length: > 0 } approved
+		&& approved != ColdcardHsmPolicy.Fingerprint(ColdcardHsmPolicy.ComposeFor(keyManager));
+
+	/// <summary>
+	/// Which of the coinjoin limits this wallet's device enforces and which Wasabi does, in words a person
+	/// can act on. Vendors differ and must not be misrepresented: telling a user their device confirms limits
+	/// it never sees would be a false claim.
+	/// </summary>
+	public static string DescribeLimitEnforcement(KeyManager keyManager) =>
+		keyManager.CoinJoinVendor switch
+		{
+			HardwareCoinJoinVendor.Trezor => "Shown on the device and confirmed there; the device enforces both.",
+			HardwareCoinJoinVendor.Coldcard =>
+				"The fee-rate cap is enforced by Wasabi - the device policy has no concept of one. The limits "
+				+ "below it are enforced by the device: how much of your value may leave in a single "
+				+ "transaction, and how many transactions it will sign in total and per period.",
+			HardwareCoinJoinVendor.Krux =>
+				"The budget you approved on the device - rounds, sats per round and in total - is enforced by the "
+				+ "device; the fee-rate cap and the round budget below are enforced by Wasabi.",
+			HardwareCoinJoinVendor.PassportPrime =>
+				"The round budget, and a total fee budget derived from the fee-rate cap, are shown on the device and "
+				+ "enforced there; the fee-rate cap itself is enforced by Wasabi.",
+			_ => "",
+		};
+
+	/// <summary>The limits a device policy enforces, named for what they mean rather than for the vendor that stores them.</summary>
+	public record DevicePolicyLimits(long MaxSatsLeaving, int MaxTransactionsPerPeriod, int MinRoundInputs);
+
+	public static DevicePolicyLimits GetDevicePolicyLimits(KeyManager keyManager) =>
+		new(keyManager.ColdcardMaxSatsLeaving, keyManager.ColdcardMaxTransactionsPerPeriod, keyManager.ColdcardMinInputs);
+
+	public static void SetDevicePolicyLimits(KeyManager keyManager, DevicePolicyLimits limits)
+	{
+		keyManager.ColdcardMaxSatsLeaving = limits.MaxSatsLeaving;
+		keyManager.ColdcardMaxTransactionsPerPeriod = limits.MaxTransactionsPerPeriod;
+		keyManager.ColdcardMinInputs = limits.MinRoundInputs;
 	}
 
 	/// <summary>Whether a detected device can act as a coinjoin remote signer, to offer it while importing.</summary>
@@ -337,6 +388,17 @@ public class HardwareWalletService : IDisposable
 		return await backend
 			.AuthorizeCoinJoinAsync(keyManager, existingKeyChain, coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken)
 			.ConfigureAwait(false);
+	}
+
+	/// <summary>What this wallet's device reports it is enforcing, or null when the vendor has nothing to report or the device would not answer.</summary>
+	public async Task<DevicePolicyReport?> GetDevicePolicyAsync(KeyManager keyManager, IKeyChain? keyChain, CancellationToken cancellationToken)
+	{
+		if (keyChain is null || BackendFor(keyManager) is not { } backend)
+		{
+			return null;
+		}
+
+		return await backend.GetDevicePolicyAsync(keyChain, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>Makes sure the device of this wallet can be reached, if it needs a transport of ours at all.</summary>
