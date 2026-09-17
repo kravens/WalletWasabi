@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using WalletWasabi.Blockchain.Analysis.Clustering;
 using WalletWasabi.Blockchain.BlockFilters;
 using WalletWasabi.CoinJoinProfiles;
+using WalletWasabi.Hwi;
 using WalletWasabi.Io;
 using WalletWasabi.Models;
 using WalletWasabi.Serialization;
@@ -166,6 +167,12 @@ public class KeyManager
 
 	/// <summary>Max mining fee rate (sat/vByte) the device is authorized to sign coinjoins at. Shown on the device.</summary>
 	public decimal CoinJoinDeviceMaxMiningFeeRate { get; set; } = DefaultCoinJoinDeviceMaxMiningFeeRate;
+
+	/// <summary>Which hardware vendor signs this wallet's coinjoins; <see cref="HardwareCoinJoinVendor.None"/> when none does. Recorded at import, since a device that signs from the wallet's ordinary accounts leaves no trace in a key path.</summary>
+	public HardwareCoinJoinVendor CoinJoinVendor { get; set; }
+
+	/// <summary>Whether a device signs this wallet's coinjoins, whatever the vendor.</summary>
+	public bool IsCoinJoinSignedByDevice => CoinJoinVendor != HardwareCoinJoinVendor.None;
 
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
@@ -800,6 +807,7 @@ public class KeyManager
 			("AnonScoreTarget", Encode.Int(keyManager.AnonScoreTarget)),
 			("CoinJoinDeviceMaxRounds", Encode.Int(keyManager.CoinJoinDeviceMaxRounds)),
 			("CoinJoinDeviceMaxMiningFeeRate", Encode.Decimal(keyManager.CoinJoinDeviceMaxMiningFeeRate)),
+			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("OnlyUsePrivateFundsForPayments", Encode.Bool(keyManager.OnlyUsePrivateFundsForPayments)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
@@ -851,6 +859,12 @@ public class KeyManager
 				CoinjoinCosts = get.Optional("CoinjoinCosts", Decode.Array(Decode.CoinjoinCosts))?.ToDictionary() ?? []
 			};
 			km._hdPubKeyCache.AddRangeKeys(get.Required("HdPubKeys", Decode.Array(Decode.HdPubKey)));
+
+			// Wallets written before the vendor was recorded: a SLIP-25 account means a Trezor, and "IsColdcardCoinjoin" is what the Coldcard flag was called.
+			km.CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
+				km.HasCoinJoinAccount ? (int)HardwareCoinJoinVendor.Trezor
+				: get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard
+				: 0);
 			return km;
 		});
 }

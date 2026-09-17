@@ -27,4 +27,17 @@ internal static class TestKeyManagers
 
 		return keyManager;
 	}
+
+	/// <summary>The segwit and taproot accounts of a device that signs coinjoins from the wallet's ordinary accounts under its own policy (Coldcard, Passport, Krux).</summary>
+	public static KeyManager PolicySignerWallet()
+	{
+		var masterKey = MasterKey;
+		return KeyManager.CreateNewHardwareWalletWatchOnly(
+			masterKey.Neuter().PubKey.GetHDFingerPrint(),
+			masterKey.Derive(new KeyPath("84'/0'/0'")).Neuter(),
+			masterKey.Derive(new KeyPath("86'/0'/0'")).Neuter(),
+			null,
+			null,
+			Network.Main);
+	}
 }

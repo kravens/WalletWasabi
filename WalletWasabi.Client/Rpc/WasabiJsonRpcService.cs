@@ -13,6 +13,7 @@ using WalletWasabi.Blockchain.TransactionOutputs;
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
+using WalletWasabi.Hwi;
 using WalletWasabi.Models;
 using WalletWasabi.Rpc;
 using WalletWasabi.WabiSabi.Client.Batching;
@@ -122,6 +123,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 				["masterKeyFingerprint"] = device.Fingerprint?.ToString() ?? "",
 				["initialized"] = device.IsInitialized(),
 				["canSignCoinJoins"] = HardwareWalletService.CanSignCoinJoins(device),
+				["vendor"] = device.Model.VendorOf().ToString(),
 				["needsPin"] = device.NeedsPinSent ?? false,
 				["needsPassphrase"] = device.NeedsPassphraseSent ?? false,
 				["error"] = device.Error ?? ""
@@ -173,7 +175,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 	{
 		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
 
-		if (!activeWallet.KeyManager.HasCoinJoinAccount)
+		if (!activeWallet.KeyManager.IsCoinJoinSignedByDevice)
 		{
 			throw new InvalidOperationException($"No device signs the coinjoins of wallet '{activeWallet.WalletName}', so it has no authorization limits.");
 		}
@@ -281,7 +283,8 @@ public class WasabiJsonRpcService : IJsonRpcService
 			["isAutoCoinjoin"] = activeWallet.KeyManager.AutoCoinJoin,
 			["isNonPrivateCoinIsolation"] = activeWallet.KeyManager.NonPrivateCoinIsolation,
 			["onlyUsePrivateFundsForPayments"] = activeWallet.KeyManager.OnlyUsePrivateFundsForPayments,
-			["coinjoinSignedByDevice"] = km.HasCoinJoinAccount,
+			["coinjoinSignedByDevice"] = km.IsCoinJoinSignedByDevice,
+			["coinjoinDeviceVendor"] = km.CoinJoinVendor.ToString(),
 			["coinjoinDeviceMaxRounds"] = km.CoinJoinDeviceMaxRounds,
 			["coinjoinDeviceMaxMiningFeeRate"] = km.CoinJoinDeviceMaxMiningFeeRate,
 			["accounts"] = GetAccounts(km)
@@ -412,7 +415,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
 		AssertWalletIsLoaded();
 
-		if (activeWallet.KeyManager.HasCoinJoinAccount)
+		if (activeWallet.KeyManager.IsCoinJoinSignedByDevice)
 		{
 			// The device approves how much value may leave the wallet in a round, never where it goes, so it
 			// cannot show this payment's destination and refuses to sign a round containing it.
