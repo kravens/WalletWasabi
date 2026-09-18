@@ -51,6 +51,8 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 	private const string DeviceTransportNotFoundMessage = "Cannot reach the device, start its bridge software";
 	private const string CoinJoinAccountEmptyMessage = "Deposit to a coinjoin account address";
 	private const string DeviceAuthorizationFailedMessage = "The device did not authorize, press Play to retry";
+	private const string DeviceRefusedToSignMessage = "The device refused to sign, check its limits in the settings";
+	private const string DeviceOwnWalletOnlyMessage = "The device only coinjoins into this wallet, change the output wallet";
 
 	private readonly IWalletModel _wallet;
 	private readonly Wallet _walletInstance;
@@ -447,6 +449,8 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 					CoinjoinError.MinInputCountTooLow => MinInputCountTooLowMessage,
 					CoinjoinError.CoordinatorLiedAboutInputs => CoordinatorLiedMessage,
 					CoinjoinError.DeviceAuthorizationFailed => DeviceAuthorizationFailedMessage,
+					CoinjoinError.DeviceRefusedToSign => DeviceRefusedToSignMessage,
+					CoinjoinError.DeviceSignsOnlyIntoItsOwnWallet => DeviceOwnWalletOnlyMessage,
 					_ => GeneralErrorMessage
 				};
 

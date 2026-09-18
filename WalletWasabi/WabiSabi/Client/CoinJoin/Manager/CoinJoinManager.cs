@@ -221,6 +221,15 @@ public class CoinJoinManager : BackgroundService
 			return coinCandidates;
 		}
 
+		// A device approves outputs to its own accounts only: a SLIP-25 account, a self-transfer policy, a
+		// session bound to the wallet's account. It would refuse every round paying another wallet.
+		if (walletToStart.KeyManager.IsCoinJoinSignedByDevice && startCommand.OutputWallet.WalletId != walletToStart.WalletId)
+		{
+			Logger.LogWarning(FormatLog("The device only signs coinjoins into this wallet's own accounts; choose this wallet as the output wallet.", walletToStart));
+			NotifyCoinJoinStartError(walletToStart, CoinjoinError.DeviceSignsOnlyIntoItsOwnWallet);
+			return;
+		}
+
 		// A device-signed wallet is watch-only until the device authorizes a batch of rounds, which also builds
 		// its key chain. The wait for the hold-to-confirm must not stall the command loop, so authorize in a
 		// task and re-post the command when done.
@@ -532,6 +541,7 @@ public class CoinJoinManager : BackgroundService
 		var destinationProvider = finishedCoinJoin.OutputWallet.OutputProvider.DestinationProvider;
 		var batchedPayments = wallet.BatchedPayments;
 		CoinJoinClientException? cjClientException = null;
+		bool deviceRefused = false;
 		var forceStop = false;
 		var unknownEnding = false;
 		try
@@ -575,6 +585,13 @@ public class CoinJoinManager : BackgroundService
 		catch (InvalidOperationException ioe)
 		{
 			Logger.LogWarning(ioe);
+		}
+		catch (HardwareWalletException e)
+		{
+			// The device refused under its own policy. Retrying builds the same transaction, and every retry
+			// spends one of the rounds the device was authorized for, so stop and say why.
+			Logger.LogWarning(FormatLog($"The device refused to sign: {e.Message}", wallet));
+			deviceRefused = true;
 		}
 		catch (OperationCanceledException)
 		{
@@ -631,6 +648,11 @@ public class CoinJoinManager : BackgroundService
 			|| finishedCoinJoin.IsStopped
 			|| cancellationToken.IsCancellationRequested)
 		{
+			NotifyWalletStoppedCoinJoin(wallet);
+		}
+		else if (deviceRefused)
+		{
+			NotifyCoinJoinStartError(wallet, CoinjoinError.DeviceRefusedToSign);
 			NotifyWalletStoppedCoinJoin(wallet);
 		}
 		else if (wallet.IsWalletPrivate() && !wallet.BatchedPayments.AreTherePendingPayments)

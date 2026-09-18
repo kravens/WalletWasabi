@@ -146,8 +146,9 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 			.ObserveOn(RxApp.TaskpoolScheduler)
 			.Subscribe(x => _wallet.Settings.OutputWalletId = x.Id);
 
+		// A device signs outputs to this wallet's own accounts only, so the output wallet is not a choice for it.
 		walletModel.IsCoinjoinStarted
-			.Select(isRunning => !isRunning)
+			.Select(isRunning => !isRunning && !walletModel.CoinJoinNeedsDeviceAuthorization)
 			.BindTo(this, x => x.IsOutputWalletSelectionEnabled);
 
 		ManuallyUpdateOutputWalletList();

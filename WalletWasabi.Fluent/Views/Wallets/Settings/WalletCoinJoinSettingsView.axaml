@@ -65,7 +65,7 @@
       <ToggleSwitch IsChecked="{Binding AutoCoinJoin}" Command="{Binding SetAutoCoinJoin}" />
     </DockPanel>
 
-    <DockPanel>
+    <DockPanel ToolTip.Tip="Where the coinjoin outputs go. A wallet whose device signs its coinjoins can only coinjoin into itself.">
       <TextBlock Text="Coinjoin to this wallet:" />
       <ComboBox ItemsSource="{Binding Wallets}" IsEnabled="{Binding IsOutputWalletSelectionEnabled}"
                 SelectedItem="{Binding SelectedOutputWallet}">
