@@ -39,9 +39,10 @@ public class CoinJoinTrackerFactory
 			throw new NotSupportedException("Wallet has no key chain.");
 		}
 
-		// A device counts every output outside its coinjoin account as value leaving it and refuses to sign the
-		// round, after the coordinator has its inputs, which bans them. So its outputs never go to another wallet.
-		if (wallet.KeyManager.HasCoinJoinAccount)
+		// A device approves coinjoin outputs to its own accounts only (a SLIP-25 account, a self-transfer policy, a
+		// session bound to the wallet's account) and refuses the round after the coordinator has its inputs, which
+		// bans them. So its outputs never go to another wallet.
+		if (wallet.KeyManager.IsCoinJoinSignedByDevice)
 		{
 			outputWallet = wallet;
 		}

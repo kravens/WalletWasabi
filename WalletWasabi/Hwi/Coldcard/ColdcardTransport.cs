@@ -156,21 +156,14 @@ public sealed class ColdcardTransport : IDisposable
 	}
 }
 
-public class ColdcardException : Exception
+public class ColdcardException : Wallets.HardwareWalletException
 {
 	public ColdcardException(string message) : base("Coldcard: " + message)
 	{
 	}
 
-	/// <param name="userMessage">What the coinjoin status line should say. That control is ~45 characters
-	/// wide and truncates without an ellipsis, so anything longer loses its ending — which is where the
-	/// instruction lives. Keep it to a few words and leave the reasoning to <paramref name="message"/>,
-	/// which goes to the log.</param>
-	public ColdcardException(string message, string userMessage) : base("Coldcard: " + message)
+	/// <param name="userMessage">Kept for callers; the coinjoin status line shows a fixed message and the log gets <paramref name="message"/>.</param>
+	public ColdcardException(string message, string userMessage) : this(message)
 	{
-		UserMessage = userMessage;
 	}
-
-	/// <summary>Short form for the status line, or null to fall back to the full message.</summary>
-	public string? UserMessage { get; }
 }

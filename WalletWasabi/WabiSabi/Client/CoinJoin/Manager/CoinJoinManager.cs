@@ -545,6 +545,7 @@ public class CoinJoinManager : BackgroundService
 		var destinationProvider = finishedCoinJoin.OutputWallet.OutputProvider.DestinationProvider;
 		var batchedPayments = wallet.BatchedPayments;
 		CoinJoinClientException? cjClientException = null;
+		bool deviceRefused = false;
 		var forceStop = false;
 		var unknownEnding = false;
 		try
@@ -598,6 +599,13 @@ public class CoinJoinManager : BackgroundService
 		catch (InvalidOperationException ioe)
 		{
 			Logger.LogWarning(ioe);
+		}
+		catch (HardwareWalletException e) when (wallet.KeyChain is not { NeedsAuthorization: true })
+		{
+			// The device refused under its own policy. Retrying builds the same transaction, and every retry
+			// spends one of the rounds the device was authorized for, so stop and say why.
+			Logger.LogWarning(FormatLog($"The device refused to sign: {e.Message}", wallet));
+			deviceRefused = true;
 		}
 		catch (OperationCanceledException)
 		{
@@ -654,6 +662,11 @@ public class CoinJoinManager : BackgroundService
 			|| finishedCoinJoin.IsStopped
 			|| cancellationToken.IsCancellationRequested)
 		{
+			NotifyWalletStoppedCoinJoin(wallet);
+		}
+		else if (deviceRefused)
+		{
+			NotifyCoinJoinStartError(wallet, CoinjoinError.DeviceRefusedToSign);
 			NotifyWalletStoppedCoinJoin(wallet);
 		}
 		else if (wallet.IsWalletPrivate() && !wallet.BatchedPayments.AreTherePendingPayments)
