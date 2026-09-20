@@ -131,7 +131,9 @@ internal sealed class UsbHidMacOs : IUsbHid
 
 	private static nint CreateMatchingDictionary(ushort vendorId, ushort productId, ushort? usagePage)
 	{
-		var dict = CFDictionaryCreateMutable(nint.Zero, 0, nint.Zero, nint.Zero);
+		// With the CFType callbacks the dictionary retains what is put in it. Without them it only keeps the
+		// pointers, and IOKit merging the released keys and values later was a segfault on every enumeration.
+		var dict = CFDictionaryCreateMutable(nint.Zero, 0, KCFTypeDictionaryKeyCallBacks, KCFTypeDictionaryValueCallBacks);
 		SetNumber(dict, "VendorID", vendorId);
 		SetNumber(dict, "ProductID", productId);
 		if (usagePage is { } page)
@@ -303,6 +305,9 @@ internal sealed class UsbHidMacOs : IUsbHid
 
 	private const string IOKit = "/System/Library/Frameworks/IOKit.framework/IOKit";
 	private const string CoreFoundation = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+
+	private static readonly nint KCFTypeDictionaryKeyCallBacks = NativeLibrary.GetExport(NativeLibrary.Load(CoreFoundation), "kCFTypeDictionaryKeyCallBacks");
+	private static readonly nint KCFTypeDictionaryValueCallBacks = NativeLibrary.GetExport(NativeLibrary.Load(CoreFoundation), "kCFTypeDictionaryValueCallBacks");
 
 	[DllImport(IOKit)]
 	private static extern nint IOHIDManagerCreate(nint allocator, uint options);
