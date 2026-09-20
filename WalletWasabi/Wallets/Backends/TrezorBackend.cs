@@ -59,8 +59,9 @@ internal class TrezorBackend : IHardwareWalletBackend
 		var coinJoinExtPubKey = await device.GetAccountXpubAsync(coinJoinAccountKeyPath, _network, cancellationToken).ConfigureAwait(false);
 		await ConfirmAccountOnDeviceAsync(device, coinJoinAccountKeyPath, coinJoinExtPubKey, addressToConfirm, cancellationToken).ConfigureAwait(false);
 
-		keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, coinJoinExtPubKey);
+		// The vendor first: adopting the account writes the wallet file, and a restart must find both.
 		keyManager.CoinJoinVendor = HardwareCoinJoinVendor.Trezor;
+		keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, coinJoinExtPubKey);
 	}
 
 	public async Task<PSBT?> TrySignTransactionAsync(KeyManager keyManager, PSBT psbt, SmartTransaction transaction, CancellationToken cancellationToken)
@@ -146,8 +147,8 @@ internal class TrezorBackend : IHardwareWalletBackend
 			var coinJoinAccountKeyPath = Slip25.GetCoinJoinAccountKeyPath(_network);
 			var coinJoinExtPubKey = await device.GetAccountXpubAsync(coinJoinAccountKeyPath, _network, cancellationToken).ConfigureAwait(false);
 			await ConfirmAccountOnDeviceAsync(device, coinJoinAccountKeyPath, coinJoinExtPubKey, addressToConfirm, cancellationToken).ConfigureAwait(false);
-			keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, coinJoinExtPubKey);
 			keyManager.CoinJoinVendor = HardwareCoinJoinVendor.Trezor;
+			keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, coinJoinExtPubKey);
 		}
 
 		return keyManager;

@@ -857,11 +857,14 @@ public class KeyManager
 			};
 			km._hdPubKeyCache.AddRangeKeys(get.Required("HdPubKeys", Decode.Array(Decode.HdPubKey)));
 
-			// Wallets written before the vendor was recorded: a SLIP-25 account means a Trezor, and "IsColdcardCoinjoin" is what the Coldcard flag was called.
-			km.CoinJoinVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
-				km.HasCoinJoinAccount ? (int)HardwareCoinJoinVendor.Trezor
-				: get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard
-				: 0);
+			// Wallets written by earlier previews: a Trezor was stored as None and inferred from its SLIP-25 account,
+			// "CoinJoinDisabled" was the opt-out, and "IsColdcardCoinjoin" is what the Coldcard flag was called.
+			var storedVendor = (HardwareCoinJoinVendor)get.Optional("CoinJoinVendor", Decode.Int,
+				get.Optional("IsColdcardCoinjoin", Decode.Bool, false) ? (int)HardwareCoinJoinVendor.Coldcard : 0);
+			km.CoinJoinVendor = get.Optional("CoinJoinDisabled", Decode.Bool, false) ? HardwareCoinJoinVendor.None
+				: storedVendor != HardwareCoinJoinVendor.None ? storedVendor
+				: km.HasCoinJoinAccount ? HardwareCoinJoinVendor.Trezor
+				: HardwareCoinJoinVendor.None;
 			return km;
 		});
 }

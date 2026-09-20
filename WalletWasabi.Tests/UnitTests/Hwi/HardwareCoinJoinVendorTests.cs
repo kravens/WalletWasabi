@@ -57,12 +57,13 @@ public class HardwareCoinJoinVendorTests
 		Assert.Equal(HardwareCoinJoinVendor.Coldcard, Reload(TestKeyManagers.PolicySignerWallet(), Path.Combine(directory, "coldcard.json"), "CoinJoinVendor", ("IsColdcardCoinjoin", true)).CoinJoinVendor);
 		Assert.Equal(HardwareCoinJoinVendor.None, Reload(TestKeyManagers.PolicySignerWallet(), Path.Combine(directory, "plain.json"), "CoinJoinVendor").CoinJoinVendor);
 
-		// Recorded: what the file says wins, even an opt-out on a wallet that keeps its SLIP-25 account.
-		var optedOut = TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: true);
-		optedOut.CoinJoinVendor = HardwareCoinJoinVendor.None;
-		var reloaded = Reload(optedOut, Path.Combine(directory, "optedout.json"));
-		Assert.True(reloaded.HasCoinJoinAccount);
-		Assert.False(reloaded.IsCoinJoinSignedByDevice);
+		// Previews 1-4 wrote the vendor as None for a Trezor (its SLIP-25 account said so) and the opt-out as its own flag.
+		var preview4Trezor = TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: true);
+		preview4Trezor.CoinJoinVendor = HardwareCoinJoinVendor.None;
+		Assert.Equal(HardwareCoinJoinVendor.Trezor, Reload(preview4Trezor, Path.Combine(directory, "preview4-trezor.json"), null, ("CoinJoinDisabled", false)).CoinJoinVendor);
+		var optedOut = Reload(preview4Trezor, Path.Combine(directory, "optedout.json"), null, ("CoinJoinDisabled", true));
+		Assert.True(optedOut.HasCoinJoinAccount);
+		Assert.False(optedOut.IsCoinJoinSignedByDevice);
 	}
 
 	/// <summary>Round-trips a wallet through its file, with a key removed and others added as older versions wrote them.</summary>

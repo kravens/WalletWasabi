@@ -143,6 +143,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 
 		var verifiedAddresses = new List<string>();
 		var keyManager = await Global.HardwareWallets.ImportConnectedAsync(walletFilePath, enableCoinjoin, new AddressCollector(verifiedAddresses), CancellationToken.None).ConfigureAwait(false);
+		keyManager.ToFile(); // The GUI saves through its settings page; here nothing else would.
 		Global.WalletManager.AddWallet(keyManager);
 
 		return new JsonRpcResult
