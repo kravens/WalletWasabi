@@ -1,4 +1,6 @@
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
+using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -109,17 +111,10 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 		// can start the vendor bridge software before checking the box instead of hitting an error after confirming.
 		if (SupportsCoinjoin)
 		{
-			Task.Run(async () =>
-			{
-				try
-				{
-					IsBridgeUnavailable = !await UiContext.HardwareWalletInterface.IsCoinJoinTransportAvailableAsync(_device, CancellationToken.None);
-				}
-				catch (Exception ex)
-				{
-					Logger.LogDebug(ex);
-				}
-			});
+			Observable.FromAsync(() => UiContext.HardwareWalletInterface.IsCoinJoinTransportAvailableAsync(_device, CancellationToken.None))
+				.ObserveOn(RxApp.MainThreadScheduler) // The view binds to the answer, so it must arrive on the UI thread.
+				.Subscribe(available => IsBridgeUnavailable = !available, ex => Logger.LogDebug(ex))
+				.DisposeWith(disposables);
 		}
 	}
 }

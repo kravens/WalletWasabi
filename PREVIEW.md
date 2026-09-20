@@ -37,6 +37,11 @@ This is an **unofficial preview build** of [Wasabi Wallet](https://github.com/Wa
 
 ## What changed since Preview 4
 
+- **Fixed in the rebuilt `v2.8.3.5` draft (20 September 2026):**
+  - *A Trezor wallet imported by Preview 1-4 had lost its coinjoin* - no music box, no Play button, its settings page showed no device limits. Those previews stored the vendor as "none" and recognised the Trezor by its SLIP-25 account; this build did not. The wallet file is now read the way those previews wrote it, and a wallet that enables coinjoin later has its vendor written to disk together with the account (it was written after the account, so a restart forgot it).
+  - *macOS crashed (segmentation fault) while looking for hardware wallets* - typically on "Add Wallet -> Hardware Wallet" with a wallet already open. The IOKit matching dictionary did not retain its keys, so IOKit read freed memory. Every crash report from the previous draft was this.
+  - `importhardwarewallet` over RPC did not write the wallet file, so the wallet was gone after a restart.
+  - The "bridge not running" warning on the connect screen was set from a background thread, which Avalonia may refuse.
 - **Rebuilt on Wasabi v2.8.3** (this is the `v2.8.3.5` build). Brings upstream's Taproot support for PayJoin, the stricter security controls (PayJoin over Tor only, compact-filter validation, net-group diversity), blame-round input verification, the fix for payments stalling when only non-private coins are banned, and the always-visible music box.
 - **Rebuilt on the rebased Trezor branch** (PR #14759 on v2.8.3). A device authorization that times out no longer crashes the application, and the SLIP-25 coinjoin account is the wallet's own: enabling coinjoin on an imported Trezor later sets the only valid change type itself, and the RPC no longer asks for a restart.
 - **Every device wallet records which vendor signs its coinjoins**, Trezor included, in one wallet-file field. Turning coinjoin off is that field going back to none. Wallets written by earlier previews are read as before: a SLIP-25 account means Trezor, the old Coldcard flag means Coldcard.

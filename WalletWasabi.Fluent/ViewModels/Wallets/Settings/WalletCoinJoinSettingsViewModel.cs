@@ -69,8 +69,8 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		// policy has been accepted, so it stays hidden until there is something real to show.
 		if (_wallet.Coinjoin is { } coinjoin)
 		{
-			coinjoin.WhenAnyValue(x => x.DevicePolicySummary).BindTo(this, x => x.DevicePolicySummary);
-			coinjoin.WhenAnyValue(x => x.DevicePolicyHash).BindTo(this, x => x.DevicePolicyHash);
+			coinjoin.WhenAnyValue(x => x.DevicePolicySummary).ObserveOn(RxApp.MainThreadScheduler).BindTo(this, x => x.DevicePolicySummary);
+			coinjoin.WhenAnyValue(x => x.DevicePolicyHash).ObserveOn(RxApp.MainThreadScheduler).BindTo(this, x => x.DevicePolicyHash);
 		}
 		HasDevicePolicyLimits = _wallet.Settings.HasDevicePolicyLimits;
 		CoinJoinLimitsEnforcedBy = _wallet.Settings.CoinJoinLimitsEnforcedBy;
