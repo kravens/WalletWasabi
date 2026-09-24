@@ -211,9 +211,20 @@ public static class WasabiAppExtensions
 						Debugger.Break();
 					}
 
+					// No ReactiveCommand subscribes to ThrownExceptions, so every failed or cancelled command ends up here.
+					// A cancelled operation (timeout, navigation, sleep/wake) is expected.
+					if (ex is OperationCanceledException)
+					{
+						Logger.LogDebug(ex);
+						return;
+					}
+
 					Logger.LogError(ex);
 
+#if DEBUG
 					RxApp.MainThreadScheduler.Schedule(() => throw new ApplicationException("Exception has been thrown in unobserved ThrownExceptions", ex));
+#endif
+					// In release builds a failed UI command must not take down the wallet, which may be in the middle of a coinjoin.
 				});
 
 				Logger.LogInfo("Wasabi GUI started.");

@@ -86,7 +86,7 @@ public class UiConfig : ConfigBase
 				x => x.WindowWidth,
 				x => x.WindowHeight)
 			.Throttle(TimeSpan.FromMilliseconds(1000))
-			.ObserveOn(RxApp.TaskpoolScheduler)
+			.ObserveOn(RxApp.MainThreadScheduler)
 			.Subscribe(_ => ToFile());
 	}
 
