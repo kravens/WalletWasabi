@@ -221,10 +221,7 @@ public static class WasabiAppExtensions
 
 					Logger.LogError(ex);
 
-#if DEBUG
 					RxApp.MainThreadScheduler.Schedule(() => throw new ApplicationException("Exception has been thrown in unobserved ThrownExceptions", ex));
-#endif
-					// In release builds a failed UI command must not take down the wallet, which may be in the middle of a coinjoin.
 				});
 
 				Logger.LogInfo("Wasabi GUI started.");
