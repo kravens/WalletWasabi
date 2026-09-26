@@ -446,64 +446,68 @@ public class SmartTransaction : IEquatable<SmartTransaction>
 	/// <summary>Update the transaction with the data acquired from another transaction. (For example merge their labels.)</summary>
 	public bool TryUpdate(SmartTransaction tx)
 	{
+		// If this is not the same tx, then don't update.
+		if (this != tx)
+		{
+			throw new InvalidOperationException($"{GetHash()} != {tx.GetHash()}");
+		}
+
+		// Snapshot the other transaction first so that we never hold the locks of two instances at once.
+		// Otherwise a.TryUpdate(b) racing b.TryUpdate(a) on different threads could deadlock.
+		var (otherHeight, otherBlockHash, otherBlockIndex, otherLabels, otherFirstSeen, otherIsReplacement, otherIsSpeedup, otherIsCancellation) = tx.GetStateSnapshot();
+
 		lock (_stateLock)
 		{
 			var updated = false;
 
-			// If this is not the same tx, then don't update.
-			if (this != tx)
-			{
-				throw new InvalidOperationException($"{GetHash()} != {tx.GetHash()}");
-			}
-
 			// Set the height related properties.
-			if (tx.Confirmed)
+			if (otherHeight is ChainHeight)
 			{
-				if (_height != tx.Height)
+				if (_height != otherHeight)
 				{
-					_height = tx.Height;
+					_height = otherHeight;
 					updated = true;
 				}
 
-				if (tx.BlockHash is { } && _blockHash != tx.BlockHash)
+				if (otherBlockHash is { } && _blockHash != otherBlockHash)
 				{
-					_blockHash = tx.BlockHash;
-					_blockIndex = tx.BlockIndex;
+					_blockHash = otherBlockHash;
+					_blockIndex = otherBlockIndex;
 					updated = true;
 				}
 			}
-			else if (_height == Height.Unknown && tx.Height == Height.Mempool)
+			else if (_height == Height.Unknown && otherHeight == Height.Mempool)
 			{
-				_height = tx.Height;
+				_height = otherHeight;
 				updated = true;
 			}
 
 			// Always the earlier seen is the firstSeen.
-			if (tx.FirstSeen < _firstSeen)
+			if (otherFirstSeen < _firstSeen)
 			{
-				_firstSeen = tx.FirstSeen;
+				_firstSeen = otherFirstSeen;
 				updated = true;
 			}
 
 			// Merge labels.
-			if (_labels != tx.Labels)
+			if (_labels != otherLabels)
 			{
-				_labels = LabelsArray.Merge(Labels, tx.Labels);
+				_labels = LabelsArray.Merge(_labels, otherLabels);
 				updated = true;
 			}
 
 			// If we have a flag set on the other, then we make sure it is set on this as well.
-			if (_isReplacement is false && tx.IsReplacement is true)
+			if (_isReplacement is false && otherIsReplacement is true)
 			{
 				_isReplacement = true;
 				updated = true;
 			}
-			if (_isSpeedup is false && tx.IsSpeedup is true)
+			if (_isSpeedup is false && otherIsSpeedup is true)
 			{
 				_isSpeedup = true;
 				updated = true;
 			}
-			if (_isCancellation is false && tx.IsCancellation is true)
+			if (_isCancellation is false && otherIsCancellation is true)
 			{
 				_isCancellation = true;
 				updated = true;
@@ -523,6 +527,15 @@ public class SmartTransaction : IEquatable<SmartTransaction>
 			}
 
 			return updated;
+		}
+	}
+
+	/// <summary>Reads all modifiable properties atomically so that callers do not need to hold <see cref="_stateLock"/>.</summary>
+	private (Height Height, uint256? BlockHash, int BlockIndex, LabelsArray Labels, DateTimeOffset FirstSeen, bool IsReplacement, bool IsSpeedup, bool IsCancellation) GetStateSnapshot()
+	{
+		lock (_stateLock)
+		{
+			return (_height, _blockHash, _blockIndex, _labels, _firstSeen, _isReplacement, _isSpeedup, _isCancellation);
 		}
 	}
 
