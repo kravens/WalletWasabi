@@ -283,7 +283,7 @@ public class CoinJoinManager : BackgroundService
 
 	/// <summary>Whether this wallet still owes its signing device an authorization before it can coinjoin.</summary>
 	private static bool NeedsDeviceAuthorization(Wallet wallet) =>
-		wallet.KeyManager.HasCoinJoinAccount && wallet.KeyChain is not { NeedsAuthorization: false };
+		wallet.KeyManager.IsCoinJoinSignedByDevice && wallet.KeyChain is not { NeedsAuthorization: false };
 
 	/// <summary>Asks the device to authorize a batch of rounds, then resumes the start; a stop while the device was asking took the start away.</summary>
 	private async Task AuthorizeDeviceAndResumeAsync(Wallet wallet, CancellationToken cancellationToken)
