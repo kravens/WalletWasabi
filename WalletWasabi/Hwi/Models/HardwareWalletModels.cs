@@ -73,4 +73,11 @@ public enum HardwareWalletModels
 	// Not an HWI model: found over its own HID interface, see the Passport backend.
 	[FriendlyName("Foundation Passport")]
 	Foundation_Passport,
+
+	// Not HWI models: found over their own bridge, see the Krux backend.
+	[FriendlyName("Krux")]
+	Krux,
+
+	[FriendlyName("SabiSigner")]
+	SabiSigner,
 }
