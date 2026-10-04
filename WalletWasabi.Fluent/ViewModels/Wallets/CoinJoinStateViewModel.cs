@@ -95,7 +95,7 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 			? State.WaitingForAutoStart
 			: State.StoppedOrPaused;
 
-		if (wallet.HasSeparateCoinJoinAccount)
+		if (wallet.CoinJoinNeedsDeviceAuthorization)
 		{
 			// Starting coinjoin requires a confirmation on the device, so it never starts automatically.
 			initialState = State.StoppedOrPaused;
