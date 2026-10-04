@@ -155,7 +155,7 @@ public class Global
 	/// <summary>The wallet whose coinjoin is using its device right now, if any.</summary>
 	private string? WalletCoinJoiningOnDevice() =>
 		HostedServices.GetOrDefault<CoinJoinManager>() is { } coinJoinManager
-			? WalletManager.GetWallets().FirstOrDefault(w => w.KeyManager.HasCoinJoinAccount && coinJoinManager.GetCoinjoinClientState(w.WalletId) is not CoinJoinClientState.Idle)?.WalletName
+			? WalletManager.GetWallets().FirstOrDefault(w => w.KeyManager.IsCoinJoinSignedByDevice && coinJoinManager.GetCoinjoinClientState(w.WalletId) is not CoinJoinClientState.Idle)?.WalletName
 			: null;
 	public TransactionBroadcaster TransactionBroadcaster { get; }
 	public HostedServices HostedServices { get; }
