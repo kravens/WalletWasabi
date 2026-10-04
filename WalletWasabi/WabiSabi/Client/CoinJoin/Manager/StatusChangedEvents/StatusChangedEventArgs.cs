@@ -32,7 +32,8 @@ public enum CoinjoinError
 	AwaitingDeviceConfirmation,
 	DeviceTransportNotFound,
 	DeviceNotFound,
-	DeviceAuthorizationFailed
+	DeviceAuthorizationFailed,
+	DeviceRefusedToSign
 }
 
 public class StatusChangedEventArgs : EventArgs

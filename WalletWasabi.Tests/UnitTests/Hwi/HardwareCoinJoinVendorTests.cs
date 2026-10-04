@@ -18,6 +18,8 @@ public class HardwareCoinJoinVendorTests
 	[InlineData(HardwareWalletModels.Trezor_T_Simulator, HardwareCoinJoinVendor.Trezor)]
 	[InlineData(HardwareWalletModels.Trezor_Safe_3, HardwareCoinJoinVendor.Trezor)]
 	[InlineData(HardwareWalletModels.Trezor_Safe_5, HardwareCoinJoinVendor.Trezor)]
+	[InlineData(HardwareWalletModels.Coldcard, HardwareCoinJoinVendor.Coldcard)]
+	[InlineData(HardwareWalletModels.Coldcard_Simulator, HardwareCoinJoinVendor.Coldcard)]
 	[InlineData(HardwareWalletModels.Ledger_Nano_X, HardwareCoinJoinVendor.None)]
 	[InlineData(HardwareWalletModels.Jade, HardwareCoinJoinVendor.None)]
 	[InlineData(HardwareWalletModels.Trezor_1, HardwareCoinJoinVendor.None)]
@@ -30,11 +32,13 @@ public class HardwareCoinJoinVendorTests
 	{
 		var directory = await Common.GetEmptyWorkDirAsync();
 
-		Assert.Equal(HardwareCoinJoinVendor.Trezor, Reload(TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: true), Path.Combine(directory, "stored.json")).CoinJoinVendor);
+		var coldcard = TestKeyManagers.PolicySignerWallet();
+		coldcard.CoinJoinVendor = HardwareCoinJoinVendor.Coldcard;
+		Assert.Equal(HardwareCoinJoinVendor.Coldcard, Reload(coldcard, Path.Combine(directory, "coldcard.json")).CoinJoinVendor);
 
 		// Written before the vendor was recorded: a SLIP-25 account means a Trezor, anything else no device.
 		Assert.Equal(HardwareCoinJoinVendor.Trezor, Reload(TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: true), Path.Combine(directory, "trezor.json"), "CoinJoinVendor").CoinJoinVendor);
-		Assert.Equal(HardwareCoinJoinVendor.None, Reload(TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: false), Path.Combine(directory, "plain.json"), "CoinJoinVendor").CoinJoinVendor);
+		Assert.Equal(HardwareCoinJoinVendor.None, Reload(TestKeyManagers.PolicySignerWallet(), Path.Combine(directory, "plain.json"), "CoinJoinVendor").CoinJoinVendor);
 	}
 
 	/// <summary>Round-trips a wallet through its file, optionally without one key, as an older version wrote it.</summary>
