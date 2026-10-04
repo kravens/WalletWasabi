@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using WalletWasabi.Blockchain.Keys;
+using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Hwi.Models;
 using WalletWasabi.Hwi.Exceptions;
@@ -14,6 +16,7 @@ using WalletWasabi.Tests.UnitTests.Hwi;
 using WalletWasabi.WabiSabi.Client;
 using WalletWasabi.Wallets;
 using WalletWasabi.Wallets.Backends;
+using WalletWasabi.WabiSabi.Client.CoinJoin.Manager;
 using Xunit;
 
 namespace WalletWasabi.Tests.UnitTests.Wallets;
@@ -81,6 +84,24 @@ public class HardwareWalletServiceTests
 		keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, TestKeyManagers.MasterKey.Derive(coinJoinAccountKeyPath).Neuter());
 
 		Assert.Equal(birthHeight, keyManager.GetBestHeight());
+	}
+
+	[Fact]
+	public void AColdcardWalletAddsTaprootOnRequestAndThenNeedsANewPolicy()
+	{
+		var keyManager = TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: false);
+		keyManager.CoinJoinVendor = HardwareCoinJoinVendor.Coldcard;
+		keyManager.ColdcardApprovedPolicyFingerprint = ColdcardHsmPolicy.Fingerprint(ColdcardBackend.ComposePolicy(keyManager));
+		Assert.True(HardwareWalletService.CanEnableTaproot(keyManager));
+		Assert.False(HardwareWalletService.CanEnableCoinJoin(keyManager)); // the Trezor account is not offered to a Coldcard wallet
+
+		var accountKeyPath = KeyManager.GetAccountKeyPath(Network.Main, ScriptPubKeyType.TaprootBIP86);
+		keyManager.AddTaprootAccount(accountKeyPath, TestKeyManagers.MasterKey.Derive(accountKeyPath).Neuter());
+
+		Assert.False(keyManager.HasCoinJoinAccount);
+		Assert.Equal(ScriptPubKeyType.TaprootBIP86, keyManager.DefaultReceiveScriptType);
+		Assert.False(HardwareWalletService.CanEnableTaproot(keyManager));
+		Assert.True(HardwareWalletService.IsDevicePolicyOutOfSync(keyManager)); // the policy now proves the taproot account too
 	}
 
 	[Fact]
@@ -292,5 +313,20 @@ public class HardwareWalletServiceTests
 
 		Assert.Contains("different address", exception.Message);
 		Assert.False(File.Exists(walletFilePath));
+	}
+
+	[Fact]
+	public void TheKeyChainSkipsRoundsAboveTheDeviceFeeCap()
+	{
+		// The device refuses a round above max_fee_per_kvbyte after the inputs registered, which bans them, so
+		// the client must cap the rounds it picks with the same number.
+		var keyManager = TestKeyManagers.PolicySignerWallet();
+		keyManager.CoinJoinDeviceMaxMiningFeeRate = 3m;
+#pragma warning disable CA2000 // No device behind it, so there is nothing to dispose.
+		IKeyChain keyChain = new ColdcardKeyChain(null!, keyManager, maxRounds: 1);
+#pragma warning restore CA2000
+
+		var capped = new CoinJoinConfiguration("coordinator", 50m, 1, AllowSoloCoinjoining: false).CappedBy(keyChain);
+		Assert.Equal(3m, capped.MaxCoinJoinMiningFeeRate);
 	}
 }

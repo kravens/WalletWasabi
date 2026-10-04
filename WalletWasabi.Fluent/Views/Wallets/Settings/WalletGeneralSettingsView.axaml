@@ -72,6 +72,10 @@
       <TextBlock Text="Coinjoin" />
       <Button Content="Enable coinjoin" Command="{Binding EnableCoinjoinCommand}" HorizontalAlignment="Right" />
     </DockPanel>
+    <DockPanel IsVisible="{Binding CanEnableTaproot}" ToolTip.Tip="Adds taproot receive addresses, so taproot coins can be received and coinjoined. Requires Coldcard Edge firmware (coinjoin-fw-2). Do this while the Coldcard is not running its coinjoin policy; it approves a new policy at the next coinjoin, and the wallet restarts afterwards.">
+      <TextBlock Text="Taproot" />
+      <Button Content="Enable taproot" Command="{Binding EnableTaprootCommand}" HorizontalAlignment="Right" />
+    </DockPanel>
     <StackPanel Spacing="5" IsVisible="{Binding AddressToConfirm, Converter={x:Static ObjectConverters.IsNotNull}}">
       <TextBlock Text="Check that the device shows this address:" TextWrapping="Wrap" />
       <TextBlock Text="{Binding AddressToConfirm}" TextWrapping="Wrap" />

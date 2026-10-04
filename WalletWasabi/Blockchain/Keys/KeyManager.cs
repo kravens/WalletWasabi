@@ -11,6 +11,7 @@ using WalletWasabi.Blockchain.Analysis.Clustering;
 using WalletWasabi.Blockchain.BlockFilters;
 using WalletWasabi.CoinJoinProfiles;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Io;
 using WalletWasabi.Models;
 using WalletWasabi.Serialization;
@@ -174,6 +175,20 @@ public class KeyManager
 	/// <summary>Whether a device signs this wallet's coinjoins, whatever the vendor.</summary>
 	public bool IsCoinJoinSignedByDevice => CoinJoinVendor != HardwareCoinJoinVendor.None;
 
+	public long ColdcardMaxSatsLeaving { get; set; } = ColdcardHsmPolicy.DefaultMaxSatsLeaving;
+
+	public int ColdcardMaxTransactionsPerPeriod { get; set; } = ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod;
+
+	public int ColdcardPeriodMinutes { get; set; } = ColdcardHsmPolicy.DefaultPeriodMinutes;
+
+	/// <summary>Fewest inputs a round transaction may have before the device will sign it, counting every participant. 0 leaves only Wasabi's own minimum, which a compromised host can ignore.</summary>
+	public int ColdcardMinInputs { get; set; } = ColdcardHsmPolicy.DefaultMinInputs;
+
+	/// <summary>Hash of the HSM policy the device last approved, so a later session can tell whether the device still enforces what was agreed to.</summary>
+	public string? ColdcardActivePolicyHash { get; set; }
+
+	/// <summary>Hash of the policy JSON our settings produced when that policy was approved; differing from a fresh composition means the limits were edited while the device stayed locked into the previous ones.</summary>
+	public string? ColdcardApprovedPolicyFingerprint { get; set; }
 
 	public bool NonPrivateCoinIsolation { get; set; } = PrivacyProfiles.DefaultProfile.NonPrivateCoinIsolation;
 
@@ -536,29 +551,33 @@ public class KeyManager
 		GetKeys(key => key.ContainsScript(scriptPubKey)).FirstOrDefault()?.FullKeyPath;
 
 	/// <summary>Adopts a SLIP-25 coinjoin account as this hardware wallet's taproot account and persists it.</summary>
-	public void SetCoinJoinAccount(KeyPath coinJoinAccountKeyPath, ExtPubKey coinJoinExtPubKey)
+	/// <remarks>Change of a regular payment must not land in the coinjoin account (the device would refuse to sign it), so segwit is the only valid change type.</remarks>
+	public void SetCoinJoinAccount(KeyPath coinJoinAccountKeyPath, ExtPubKey coinJoinExtPubKey) =>
+		AddTaprootAccount(coinJoinAccountKeyPath, coinJoinExtPubKey, PreferredScriptPubKeyType.Specified.SegWit);
+
+	/// <summary>Adds a taproot account to a hardware wallet imported without one, makes it the default receive type, and persists it.</summary>
+	public void AddTaprootAccount(KeyPath accountKeyPath, ExtPubKey accountExtPubKey, PreferredScriptPubKeyType? changeScriptPubKeyType = null)
 	{
 		lock (_criticalStateLock)
 		{
 			if (!CanAddCoinJoinAccount)
 			{
-				throw new InvalidOperationException("Only a hardware wallet without a taproot account can take a coinjoin account.");
+				throw new InvalidOperationException("Only a hardware wallet without a taproot account can take one.");
 			}
 
-			TaprootAccountKeyPath = coinJoinAccountKeyPath;
-			TaprootExtPubKey = coinJoinExtPubKey;
+			TaprootAccountKeyPath = accountKeyPath;
+			TaprootExtPubKey = accountExtPubKey;
 			TaprootExternalKeyGenerator = new HdPubKeyGenerator(TaprootExtPubKey.Derive(0), TaprootAccountKeyPath.Derive(0), MinGapLimit);
 			_taprootInternalKeyGenerator = new HdPubKeyGenerator(TaprootExtPubKey.Derive(1), TaprootAccountKeyPath.Derive(1), MinGapLimit);
 
-			// Only coins of the SLIP-25 account can join rounds, so hand out its addresses by default; segwit receive
-			// stays available for deposits that should not be coinjoined. Change of a regular payment must not land in
-			// the coinjoin account (the device would refuse to sign it), so segwit is the only valid change type.
+			// Where coins can join rounds only from this account (SLIP-25), its addresses are the ones to hand out;
+			// segwit receive stays available for deposits that should not be coinjoined.
 			DefaultReceiveScriptType = ScriptPubKeyType.TaprootBIP86;
-			ChangeScriptPubKeyType = PreferredScriptPubKeyType.Specified.SegWit;
+			ChangeScriptPubKeyType = changeScriptPubKeyType ?? ChangeScriptPubKeyType;
 
 			AssertCleanKeysIndexedNoLock();
 
-			// The account may hold coins already (from an earlier coinjoin app on the same device), and the filters
+			// The account may hold coins already (from an earlier wallet app on the same device), and the filters
 			// seen so far were only matched against the other accounts: look at them again.
 			_blockchainState.Height = _blockchainState.BirthHeight ?? ChainHeight.Genesis;
 		}
@@ -809,6 +828,12 @@ public class KeyManager
 			("CoinJoinDeviceMaxRounds", Encode.Int(keyManager.CoinJoinDeviceMaxRounds)),
 			("CoinJoinDeviceMaxMiningFeeRate", Encode.Decimal(keyManager.CoinJoinDeviceMaxMiningFeeRate)),
 			("CoinJoinVendor", Encode.Int((int)keyManager.CoinJoinVendor)),
+			("ColdcardMaxSatsLeaving", Encode.Int64(keyManager.ColdcardMaxSatsLeaving)),
+			("ColdcardMaxTransactionsPerPeriod", Encode.Int(keyManager.ColdcardMaxTransactionsPerPeriod)),
+			("ColdcardPeriodMinutes", Encode.Int(keyManager.ColdcardPeriodMinutes)),
+			("ColdcardMinInputs", Encode.Int(keyManager.ColdcardMinInputs)),
+			("ColdcardActivePolicyHash", Encode.String(keyManager.ColdcardActivePolicyHash ?? "")),
+			("ColdcardApprovedPolicyFingerprint", Encode.String(keyManager.ColdcardApprovedPolicyFingerprint ?? "")),
 			("RedCoinIsolation", Encode.Bool(keyManager.NonPrivateCoinIsolation)),
 			("OnlyUsePrivateFundsForPayments", Encode.Bool(keyManager.OnlyUsePrivateFundsForPayments)),
 			("DefaultReceiveScriptType", Encode.ScriptPubKeyType(keyManager.DefaultReceiveScriptType)),
@@ -851,6 +876,12 @@ public class KeyManager
 				AnonScoreTarget = get.Optional("AnonScoreTarget", Decode.Int, 10),
 				CoinJoinDeviceMaxRounds = get.Optional("CoinJoinDeviceMaxRounds", Decode.Int, DefaultCoinJoinDeviceMaxRounds),
 				CoinJoinDeviceMaxMiningFeeRate = get.Optional("CoinJoinDeviceMaxMiningFeeRate", Decode.Decimal, DefaultCoinJoinDeviceMaxMiningFeeRate),
+				ColdcardMaxSatsLeaving = get.Optional("ColdcardMaxSatsLeaving", Decode.Int64, ColdcardHsmPolicy.DefaultMaxSatsLeaving),
+				ColdcardMaxTransactionsPerPeriod = get.Optional("ColdcardMaxTransactionsPerPeriod", Decode.Int, ColdcardHsmPolicy.DefaultMaxTransactionsPerPeriod),
+				ColdcardPeriodMinutes = get.Optional("ColdcardPeriodMinutes", Decode.Int, ColdcardHsmPolicy.DefaultPeriodMinutes),
+				ColdcardMinInputs = get.Optional("ColdcardMinInputs", Decode.Int, ColdcardHsmPolicy.DefaultMinInputs),
+				ColdcardActivePolicyHash = get.Optional("ColdcardActivePolicyHash", Decode.String) is { Length: > 0 } activeHash ? activeHash : null,
+				ColdcardApprovedPolicyFingerprint = get.Optional("ColdcardApprovedPolicyFingerprint", Decode.String) is { Length: > 0 } approvedHash ? approvedHash : null,
 				NonPrivateCoinIsolation = get.Optional("RedCoinIsolation", Decode.Bool, false),
 				OnlyUsePrivateFundsForPayments = get.Optional("OnlyUsePrivateFundsForPayments", Decode.Bool, false),
 				DefaultReceiveScriptType = get.Optional("DefaultReceiveScriptType", Decode.ScriptPubKeyType, ScriptPubKeyType.TaprootBIP86),

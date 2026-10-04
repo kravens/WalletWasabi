@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Reactive.Disposables;
 using System.Reactive.Disposables.Fluent;
@@ -39,6 +40,12 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 	[AutoNotify] private string _plebStopThreshold;
 	[AutoNotify] private string _deviceMaxRounds;
 	[AutoNotify] private string _deviceMaxMiningFeeRate;
+	[AutoNotify] private string _devicePolicyMaxSatsLeaving;
+	[AutoNotify] private string _devicePolicyMaxTransactionsPerPeriod;
+	[AutoNotify] private string _devicePolicyMinRoundInputs;
+	[AutoNotify] private bool _devicePolicyOutOfSync;
+	[AutoNotify] private string _devicePolicySummary = "";
+	[AutoNotify] private string _devicePolicyHash = "";
 	[AutoNotify] private bool _isOutputWalletSelectionEnabled = true;
 	[AutoNotify] private IWalletModel _selectedOutputWallet;
 	[AutoNotify] private ReadOnlyObservableCollection<IWalletModel> _wallets = ReadOnlyObservableCollection<IWalletModel>.Empty;
@@ -55,6 +62,20 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		_onlyUsePrivateFundsForPayments = _wallet.Settings.OnlyUsePrivateFundsForPayments;
 		HasDeviceAuthorizationLimits = _wallet.CoinJoinNeedsDeviceAuthorization;
 		_deviceMaxRounds = _wallet.Settings.CoinJoinDeviceMaxRounds.ToString();
+		_devicePolicyMaxSatsLeaving = _wallet.Settings.DevicePolicyMaxSatsLeaving.ToString(CultureInfo.InvariantCulture);
+		_devicePolicyMaxTransactionsPerPeriod = _wallet.Settings.DevicePolicyMaxTransactionsPerPeriod.ToString(CultureInfo.InvariantCulture);
+		_devicePolicyMinRoundInputs = _wallet.Settings.DevicePolicyMinRoundInputs.ToString(CultureInfo.InvariantCulture);
+		_devicePolicyOutOfSync = _wallet.Settings.IsDevicePolicyOutOfSync;
+
+		// What the device says it is enforcing, as opposed to what is configured above. Only populated once a
+		// policy has been accepted, so it stays hidden until there is something real to show.
+		if (_wallet.Coinjoin is { } coinjoin)
+		{
+			coinjoin.WhenAnyValue(x => x.DevicePolicySummary).ObserveOn(RxApp.MainThreadScheduler).BindTo(this, x => x.DevicePolicySummary);
+			coinjoin.WhenAnyValue(x => x.DevicePolicyHash).ObserveOn(RxApp.MainThreadScheduler).BindTo(this, x => x.DevicePolicyHash);
+		}
+		HasDevicePolicyLimits = _wallet.Settings.HasDevicePolicyLimits;
+		CoinJoinLimitsEnforcedBy = _wallet.Settings.CoinJoinLimitsEnforcedBy;
 		_deviceMaxMiningFeeRate = _wallet.Settings.CoinJoinDeviceMaxMiningFeeRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
 		_selectedOutputWallet = UiContext.WalletRepository.Wallets.Items.First(x => x.Id == _wallet.Settings.OutputWalletId);
@@ -113,6 +134,9 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		this.ValidateProperty(x => x.AnonScoreTarget, ValidateAnonScoreTarget);
 		this.ValidateProperty(x => x.DeviceMaxRounds, ValidateDeviceMaxRounds);
 		this.ValidateProperty(x => x.DeviceMaxMiningFeeRate, ValidateDeviceMaxMiningFeeRate);
+		this.ValidateProperty(x => x.DevicePolicyMaxSatsLeaving, ValidateDevicePolicyMaxSatsLeaving);
+		this.ValidateProperty(x => x.DevicePolicyMaxTransactionsPerPeriod, ValidateDevicePolicyMaxTransactionsPerPeriod);
+		this.ValidateProperty(x => x.DevicePolicyMinRoundInputs, ValidateDevicePolicyMinRoundInputs);
 
 		this.WhenAnyValue(x => x.PlebStopThreshold)
 			.Skip(1)
@@ -186,6 +210,59 @@ public partial class WalletCoinJoinSettingsViewModel : RoutableViewModel
 		{
 			errors.Add(ErrorSeverity.Error, $"Must be a number between {PrivacyProfiles.AbsoluteMinAnonScoreTarget} and {PrivacyProfiles.AbsoluteMaxAnonScoreTarget}");
 		}
+	}
+
+	/// <summary>Whether the device runs a policy of its own, which is what these extra limits belong to.</summary>
+	public bool HasDevicePolicyLimits { get; }
+
+	/// <summary>Which of these limits the device enforces and which Wasabi does, in the user's own words.</summary>
+	public string CoinJoinLimitsEnforcedBy { get; } = "";
+
+	// The ranges are the daemon's (HardwareWalletService), so the GUI and the RPC accept the same limits.
+	private void ValidateDevicePolicyMaxSatsLeaving(IValidationErrors errors)
+	{
+		string? error = null;
+		if (!long.TryParse(DevicePolicyMaxSatsLeaving, NumberStyles.Number, CultureInfo.InvariantCulture, out var sats) || !HardwareWalletService.TryValidateMaxSatsLeaving(sats, out error))
+		{
+			errors.Add(ErrorSeverity.Error, error ?? "Must be a whole number.");
+			return;
+		}
+
+		_wallet.Settings.DevicePolicyMaxSatsLeaving = sats;
+		SaveDevicePolicyLimit();
+	}
+
+	private void ValidateDevicePolicyMaxTransactionsPerPeriod(IValidationErrors errors)
+	{
+		string? error = null;
+		if (!int.TryParse(DevicePolicyMaxTransactionsPerPeriod, out var count) || !HardwareWalletService.TryValidateMaxTransactionsPerPeriod(count, out error))
+		{
+			errors.Add(ErrorSeverity.Error, error ?? "Must be a whole number.");
+			return;
+		}
+
+		_wallet.Settings.DevicePolicyMaxTransactionsPerPeriod = count;
+		SaveDevicePolicyLimit();
+	}
+
+	private void ValidateDevicePolicyMinRoundInputs(IValidationErrors errors)
+	{
+		string? error = null;
+		if (!int.TryParse(DevicePolicyMinRoundInputs, out var inputs) || !HardwareWalletService.TryValidateMinRoundInputs(inputs, out error))
+		{
+			errors.Add(ErrorSeverity.Error, error ?? "Must be a whole number.");
+			return;
+		}
+
+		_wallet.Settings.DevicePolicyMinRoundInputs = inputs;
+		SaveDevicePolicyLimit();
+	}
+
+	/// <summary>Saves a limit just validated, and re-reads whether the saved limits still match the policy the device enforces.</summary>
+	private void SaveDevicePolicyLimit()
+	{
+		_wallet.Settings.Save();
+		DevicePolicyOutOfSync = _wallet.Settings.IsDevicePolicyOutOfSync;
 	}
 
 	private void ValidateDeviceMaxRounds(IValidationErrors errors)

@@ -80,6 +80,10 @@ public partial interface IWalletModel : INotifyPropertyChanged
 
 	Task EnableCoinjoinAsync(IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken);
 
+	bool CanEnableTaproot { get; }
+
+	Task EnableTaprootAsync(CancellationToken cancellationToken);
+
 	bool IsWatchOnlyWallet { get; }
 
 	IEnumerable<(string Label, int Score)> GetMostUsedLabels(Intent intent);
@@ -213,10 +217,15 @@ public partial class WalletModel : ReactiveObject, IWalletModel
 
 	public bool CoinJoinNeedsDeviceAuthorization => CoinJoinIsSignedByDevice;
 
-	public bool CanEnableCoinjoin => Wallet.KeyManager.CanAddCoinJoinAccount;
+	public bool CanEnableCoinjoin => HardwareWalletService.CanEnableCoinJoin(Wallet.KeyManager);
 
 	public Task EnableCoinjoinAsync(IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken) =>
 		_services.HardwareWallets.EnableCoinJoinAsync(Wallet.KeyManager, addressToConfirm, cancellationToken);
+
+	public bool CanEnableTaproot => HardwareWalletService.CanEnableTaproot(Wallet.KeyManager);
+
+	public Task EnableTaprootAsync(CancellationToken cancellationToken) =>
+		_services.HardwareWallets.EnableTaprootAsync(Wallet.KeyManager, cancellationToken);
 
 	public bool IsWatchOnlyWallet => Wallet.KeyManager.IsWatchOnly;
 
