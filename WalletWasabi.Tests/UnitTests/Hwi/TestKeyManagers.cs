@@ -1,5 +1,6 @@
 using NBitcoin;
 using WalletWasabi.Blockchain.Keys;
+using WalletWasabi.Hwi;
 
 namespace WalletWasabi.Tests.UnitTests.Hwi;
 
@@ -22,6 +23,7 @@ internal static class TestKeyManagers
 		if (withCoinJoinAccount)
 		{
 			var coinJoinAccountKeyPath = Slip25.GetCoinJoinAccountKeyPath(Network.Main);
+			keyManager.CoinJoinVendor = HardwareCoinJoinVendor.Trezor;
 			keyManager.SetCoinJoinAccount(coinJoinAccountKeyPath, masterKey.Derive(coinJoinAccountKeyPath).Neuter());
 		}
 

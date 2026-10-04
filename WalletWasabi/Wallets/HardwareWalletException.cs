@@ -6,6 +6,10 @@ public class HardwareWalletException : Exception
 	public HardwareWalletException(string message) : base(message)
 	{
 	}
+
+	public HardwareWalletException(string message, Exception innerException) : base(message, innerException)
+	{
+	}
 }
 
 /// <summary>The device could not be reached: not connected, locked, or held by another program.</summary>
