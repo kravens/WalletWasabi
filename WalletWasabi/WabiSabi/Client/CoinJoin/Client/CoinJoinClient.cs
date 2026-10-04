@@ -111,6 +111,11 @@ public class CoinJoinClient
 			throw new InvalidOperationException($"Blame Round ({roundState.Id}): Abandoning: the minimum input count was too low.");
 		}
 
+		if (_keyChain.MinRoundInputs is { } signerFloor && signerFloor > roundState.CoinjoinState.Parameters.MinInputCountByRound)
+		{
+			throw new InvalidOperationException($"Blame Round ({roundState.Id}): Abandoning: the round may close below the {signerFloor} inputs the signing device requires.");
+		}
+
 		if (roundState.CoinjoinState.Parameters.MiningFeeRate.SatoshiPerByte > _coinJoinConfiguration.MaxCoinJoinMiningFeeRate)
 		{
 			throw new InvalidOperationException($"Blame Round ({roundState.Id}): Abandoning: " +
@@ -127,10 +132,28 @@ public class CoinJoinClient
 		ImmutableList<SmartCoin> myCoins;
 		IEnumerable<SmartCoin> coinCandidates;
 
+		// A device handed an input it cannot sign does not necessarily say so - it can return a PSBT with nothing
+		// filled in - so such coins stay out of the selection instead of failing the round at signing.
+		List<SmartCoin> SignableCandidates()
+		{
+			var candidates = coinCandidatesFunc().ToList();
+			var signable = candidates.Where(coin => _keyChain.CanSign(coin.ScriptType)).ToList();
+			if (signable.Count == 0)
+			{
+				throw new CoinJoinClientException(CoinjoinError.NoCoinsEligibleToMix, "None of the wallet's coins can be signed by this device.");
+			}
+			if (signable.Count < candidates.Count)
+			{
+				var leftOut = candidates.Except(signable).Select(coin => coin.ScriptType).Distinct();
+				Logger.LogInfo($"Leaving out {candidates.Count - signable.Count} coin(s) the signing device cannot sign ({string.Join(", ", leftOut)}).");
+			}
+			return signable;
+		}
+
 		do
 		{
 			// Sanity check if we would get coins at all otherwise this will throw.
-			coinCandidatesFunc();
+			SignableCandidates();
 
 			currentRoundState = await WaitForRoundAsync(excludeRound, cancellationToken).ConfigureAwait(false);
 			RoundParameters roundParameters = currentRoundState.CoinjoinState.Parameters;
@@ -143,6 +166,18 @@ public class CoinJoinClient
 					Logger.LogInfo(FormatLog(roundSkippedMessage, currentRoundState));
 					throw new CoinJoinClientException(CoinjoinError.MiningFeeRateTooHigh, roundSkippedMessage);
 				}
+				if (_keyChain.MinRoundInputs is { } signerFloor && signerFloor > roundParameters.MinInputCountByRound)
+				{
+					// The round may close with fewer inputs than the device signs, and a refusal after the inputs
+					// registered gets them banned, so stay out. Say which of the two numbers has to move.
+					string floorMessage =
+						$"This coordinator closes rounds with as few as {roundParameters.MinInputCountByRound} inputs, "
+						+ $"but the signing device requires at least {signerFloor}, so it could refuse to sign. "
+						+ "Lower the minimum input count in the coinjoin settings, or use a coordinator that "
+						+ "builds larger rounds.";
+					Logger.LogInfo(FormatLog(floorMessage, currentRoundState));
+					throw new CoinJoinClientException(CoinjoinError.MinInputCountTooLow, floorMessage);
+				}
 				if (roundParameters.MinInputCountByRound < _coinJoinConfiguration.AbsoluteMinInputCount)
 				{
 					string roundSkippedMessage = $"Min input count for the round was {roundParameters.MinInputCountByRound} but min allowed is {_coinJoinConfiguration.AbsoluteMinInputCount}.";
@@ -151,7 +186,7 @@ public class CoinJoinClient
 				}
 			}
 
-			coinCandidates = coinCandidatesFunc();
+			coinCandidates = SignableCandidates();
 
 			var liquidityClue = _liquidityClueProvider.GetLiquidityClue(roundParameters.MaxSuggestedAmount);
 			var utxoSelectionParameters = UtxoSelectionParameters.FromRoundParameters(roundParameters, _outputProvider.DestinationProvider.SupportedScriptTypes.ToArray());

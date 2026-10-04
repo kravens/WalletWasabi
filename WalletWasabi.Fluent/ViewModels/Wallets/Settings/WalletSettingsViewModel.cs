@@ -136,6 +136,24 @@ public partial class WalletSettingsViewModel : RoutableViewModel
             }
         });
 
+        // A Coldcard wallet is imported with segwit only; its taproot account is added on request, then the application restarts like above.
+        CanEnableTaproot = walletModel.CanEnableTaproot;
+        EnableTaprootCommand = ReactiveCommand.CreateFromTask(async () =>
+        {
+            try
+            {
+                await walletModel.EnableTaprootAsync(System.Threading.CancellationToken.None);
+
+                UiContext.Navigate(MetaData.NavigationTarget).Clear();
+                AppLifetimeHelper.Shutdown(withShutdownPrevention: true, restart: true);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex);
+                await ShowErrorAsync("Enable taproot", ex.ToUserFriendlyString(), "Could not enable taproot.");
+            }
+        });
+
         ResyncWalletCommand = ReactiveCommand.CreateFromTask(async () =>
         {
             var result = await UiContext.Navigate().To().ResyncWallet(walletModel.GetWalletStats().BirthHeight, walletModel.Settings.MinGapLimit).GetResultAsync();
@@ -205,6 +223,8 @@ public partial class WalletSettingsViewModel : RoutableViewModel
     public ICommand ResyncWalletCommand { get; }
     public bool CanEnableCoinjoin { get; }
     public ICommand EnableCoinjoinCommand { get; }
+    public bool CanEnableTaproot { get; }
+    public ICommand EnableTaprootCommand { get; }
 
     protected override void OnNavigatedTo(bool isInHistory, CompositeDisposable disposables)
     {

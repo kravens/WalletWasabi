@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Hwi;
+using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Hwi.Models;
 using WalletWasabi.Hwi.Trezor;
 using WalletWasabi.Wallets.Backends;
@@ -28,7 +29,7 @@ public class HardwareWalletService : IDisposable
 			_transportStatus = status;
 			TransportStatusChanged?.Invoke(this, status);
 		});
-		_backends = new IHardwareWalletBackend[] { _trezor }.ToDictionary(backend => backend.Vendor);
+		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network) }.ToDictionary(backend => backend.Vendor);
 	}
 
 	private readonly Network _network;
@@ -111,6 +112,72 @@ public class HardwareWalletService : IDisposable
 		{
 			throw new ArgumentOutOfRangeException(nameof(maxMiningFeeRate), maxMiningFeeRate, feeRateError);
 		}
+	}
+
+	/// <summary>Whether this wallet's device enforces limits of its own beyond the round budget - how much value may leave, how often, how large a round must be. Only a device running a policy has them.</summary>
+	public static bool HasDevicePolicyLimits(KeyManager keyManager) =>
+		keyManager.CoinJoinVendor is HardwareCoinJoinVendor.Coldcard;
+
+	/// <summary>
+	/// Whether the wallet's saved limits differ from the policy its device is actually enforcing. A device
+	/// policy cannot be changed while it runs - deliberately, since a host that could end it could also drop
+	/// every limit - so a value edited afterwards is saved and simply not applied until the device restarts.
+	/// False before any policy has been approved, when there is nothing to disagree with.
+	/// </summary>
+	public static bool IsDevicePolicyOutOfSync(KeyManager keyManager) =>
+		HasDevicePolicyLimits(keyManager)
+		&& keyManager.ColdcardApprovedPolicyFingerprint is { Length: > 0 } approved
+		&& approved != ColdcardHsmPolicy.Fingerprint(ColdcardBackend.ComposePolicy(keyManager));
+
+	/// <summary>
+	/// Which of the coinjoin limits this wallet's device enforces and which Wasabi does, in words a person
+	/// can act on. Vendors differ and must not be misrepresented: telling a user their device confirms limits
+	/// it never sees would be a false claim.
+	/// </summary>
+	public static string DescribeLimitEnforcement(KeyManager keyManager) =>
+		keyManager.CoinJoinVendor switch
+		{
+			HardwareCoinJoinVendor.Trezor => "Shown on the device and confirmed there; the device enforces both.",
+			HardwareCoinJoinVendor.Coldcard =>
+				"Enforced by the device policy: the fee-rate cap, how much of your value may leave in a single "
+				+ "transaction, how many transactions it signs in total and per period, and the smallest round it signs.",
+			_ => "",
+		};
+
+	/// <summary>Whether the cap on value leaving per transaction is one a device policy can hold: a round costs the wallet its fee share, so a few thousand sats is the floor, and past a whole bitcoin it stops being a cap.</summary>
+	public static bool TryValidateMaxSatsLeaving(long? sats, [NotNullWhen(false)] out string? error) =>
+		Check(sats is null or (>= 1_000 and <= 100_000_000), "Must be between 1,000 and 100,000,000 sats.", out error);
+
+	public static bool TryValidateMaxTransactionsPerPeriod(int? count, [NotNullWhen(false)] out string? error) =>
+		Check(count is null or (>= 1 and <= MaxAuthorizationRounds), $"Must be a whole number between 1 and {MaxAuthorizationRounds}.", out error);
+
+	/// <summary>0 turns the device-side floor off; above that it is the fewest round inputs the device signs with.</summary>
+	public static bool TryValidateMinRoundInputs(int? inputs, [NotNullWhen(false)] out string? error) =>
+		Check(inputs is null or (>= 0 and <= MaxAuthorizationRounds), $"Must be a whole number between 0 and {MaxAuthorizationRounds}.", out error);
+
+	/// <summary>Sets the limits a device policy enforces; whatever is left out keeps its value. Applies from the next policy the device approves.</summary>
+	public static void SetDevicePolicyLimits(KeyManager keyManager, long? maxSatsLeaving, int? maxTransactionsPerPeriod, int? minRoundInputs)
+	{
+		if (!HasDevicePolicyLimits(keyManager))
+		{
+			throw new InvalidOperationException("The device of this wallet runs no policy of its own, so it has no such limits.");
+		}
+		if (!TryValidateMaxSatsLeaving(maxSatsLeaving, out var error)
+			|| !TryValidateMaxTransactionsPerPeriod(maxTransactionsPerPeriod, out error)
+			|| !TryValidateMinRoundInputs(minRoundInputs, out error))
+		{
+			throw new ArgumentOutOfRangeException(nameof(keyManager), error);
+		}
+
+		keyManager.ColdcardMaxSatsLeaving = maxSatsLeaving ?? keyManager.ColdcardMaxSatsLeaving;
+		keyManager.ColdcardMaxTransactionsPerPeriod = maxTransactionsPerPeriod ?? keyManager.ColdcardMaxTransactionsPerPeriod;
+		keyManager.ColdcardMinInputs = minRoundInputs ?? keyManager.ColdcardMinInputs;
+	}
+
+	private static bool Check(bool valid, string message, out string? error)
+	{
+		error = valid ? null : message;
+		return valid;
 	}
 
 	/// <summary>Whether a detected device can act as a coinjoin remote signer, to offer it while importing.</summary>
@@ -235,6 +302,10 @@ public class HardwareWalletService : IDisposable
 		return await ImportAsync(detected[0], walletFilePath, enableCoinjoin, addressToConfirm, cancellationToken).ConfigureAwait(false);
 	}
 
+	/// <summary>Whether a coinjoin account can be added: a wallet another vendor already signs coinjoins for has nothing to enable.</summary>
+	public static bool CanEnableCoinJoin(KeyManager keyManager) =>
+		keyManager.CanAddCoinJoinAccount && keyManager.CoinJoinVendor is HardwareCoinJoinVendor.None;
+
 	/// <summary>Adds a coinjoin account to an imported watch-only wallet; the device confirms it and shows its first address to check, as an import does.</summary>
 	public async Task EnableCoinJoinAsync(KeyManager keyManager, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken)
 	{
@@ -242,15 +313,31 @@ public class HardwareWalletService : IDisposable
 		{
 			return;
 		}
-		if (!keyManager.CanAddCoinJoinAccount)
+		if (!CanEnableCoinJoin(keyManager))
 		{
-			throw new InvalidOperationException("Only a hardware wallet without a taproot account can have a coinjoin account added.");
+			throw new InvalidOperationException("Only a hardware wallet without a taproot account or a coinjoin signer can have a coinjoin account added.");
 		}
 		AssertNoCoinJoinOnDevice();
 
 		// Only a Trezor can be enabled after the fact, by adding the account; every other vendor is decided at import.
 		using var timeout = ConfirmationTimeout(cancellationToken);
 		await _trezor.EnableCoinJoinAsync(keyManager, addressToConfirm, timeout.Token).ConfigureAwait(false);
+	}
+
+	/// <summary>Whether this wallet can add a taproot account later: a Coldcard is imported with segwit only, and signs taproot only on Edge firmware.</summary>
+	public static bool CanEnableTaproot(KeyManager keyManager) =>
+		keyManager.CoinJoinVendor is HardwareCoinJoinVendor.Coldcard && keyManager.CanAddCoinJoinAccount;
+
+	/// <summary>Adds the device's taproot account to a Coldcard coinjoin wallet. The device policy changes with it, so the Coldcard approves a new one at the next coinjoin.</summary>
+	public async Task EnableTaprootAsync(KeyManager keyManager, CancellationToken cancellationToken)
+	{
+		if (!CanEnableTaproot(keyManager))
+		{
+			throw new InvalidOperationException("Only a Coldcard coinjoin wallet without a taproot account can have one added.");
+		}
+		AssertNoCoinJoinOnDevice();
+
+		await Task.Run(() => ColdcardBackend.AddTaprootAccount(keyManager), cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -339,6 +426,17 @@ public class HardwareWalletService : IDisposable
 		return await backend
 			.AuthorizeCoinJoinAsync(keyManager, existingKeyChain, coordinatorIdentifier, maxRounds, maxMiningFeeRate, cancellationToken)
 			.ConfigureAwait(false);
+	}
+
+	/// <summary>What this wallet's device reports it is enforcing, or null when the vendor has nothing to report or the device would not answer.</summary>
+	public async Task<DevicePolicyReport?> GetDevicePolicyAsync(KeyManager keyManager, IKeyChain? keyChain, CancellationToken cancellationToken)
+	{
+		if (keyChain is null || BackendFor(keyManager) is not { } backend)
+		{
+			return null;
+		}
+
+		return await backend.GetDevicePolicyAsync(keyChain, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>Makes sure the device of this wallet can be reached, if it needs a transport of ours at all.</summary>

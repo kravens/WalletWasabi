@@ -50,7 +50,7 @@ public class Wallet : BackgroundService
 		KeyManager = keyManager;
 		ServiceConfiguration = serviceConfiguration;
 		CpfpInfoProvider = cpfpInfoProvider;
-		DestinationProvider = new InternalDestinationProvider(KeyManager);
+		DestinationProvider = new InternalDestinationProvider(KeyManager, scriptType => KeyChain?.CanSign(scriptType) ?? true);
 		_filterStore = filterStore;
 		TransactionStore = transactionStore;
 		FilterHeaderChain = filterHeaderChain;
