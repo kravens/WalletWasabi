@@ -22,6 +22,9 @@ internal interface IHardwareWalletBackend : IDisposable
 {
 	HardwareCoinJoinVendor Vendor { get; }
 
+	/// <summary>A device HWI cannot see, found over the vendor's own transport; null when none answers.</summary>
+	Task<HwiEnumerateEntry?> TryDetectAsync(CancellationToken cancellationToken) => Task.FromResult<HwiEnumerateEntry?>(null);
+
 	/// <summary>
 	/// Reads the wallet's accounts over the vendor's own transport. Returns null when HWI's own import is
 	/// enough: a vendor that signs from the wallet's ordinary accounts has nothing extra to read.
