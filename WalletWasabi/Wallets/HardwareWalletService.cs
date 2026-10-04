@@ -29,7 +29,7 @@ public class HardwareWalletService : IDisposable
 			_transportStatus = status;
 			TransportStatusChanged?.Invoke(this, status);
 		});
-		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network), new PassportBackend(network) }.ToDictionary(backend => backend.Vendor);
+		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network), new PassportBackend(network), new KruxBackend(network) }.ToDictionary(backend => backend.Vendor);
 	}
 
 	private readonly Network _network;
@@ -141,6 +141,9 @@ public class HardwareWalletService : IDisposable
 			HardwareCoinJoinVendor.Coldcard =>
 				"Enforced by the device policy: the fee-rate cap, how much of your value may leave in a single "
 				+ "transaction, how many transactions it signs in total and per period, and the smallest round it signs.",
+			HardwareCoinJoinVendor.Krux =>
+				"The budget you approved on the device - rounds, sats per round and in total - is enforced by the "
+				+ "device; the fee-rate cap and the round budget below are enforced by Wasabi.",
 			HardwareCoinJoinVendor.PassportPrime =>
 				"The round budget, and a total fee budget derived from the fee-rate cap, are shown on the device and "
 				+ "enforced there; the fee-rate cap itself is enforced by Wasabi.",
