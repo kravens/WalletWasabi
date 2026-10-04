@@ -1,4 +1,6 @@
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
+using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -7,6 +9,7 @@ using WalletWasabi.Extensions;
 using WalletWasabi.Fluent.Extensions;
 using WalletWasabi.Fluent.ViewModels.Navigation;
 using WalletWasabi.Logging;
+using WalletWasabi.Hwi.Models;
 using WalletWasabi.Wallets;
 
 namespace WalletWasabi.Fluent.ViewModels.AddWallet.HardwareWallet;
@@ -17,6 +20,7 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 	[AutoNotify] private bool _enableCoinjoin;
 	[AutoNotify] private bool _isBridgeUnavailable;
 	[AutoNotify] private string? _addressToConfirm;
+	private readonly HwiEnumerateEntry _device;
 
 	public DetectedHardwareWalletViewModel(UiContext uiContext, WalletCreationOptions.ConnectToHardwareWallet options) : base(uiContext)
 	{
@@ -24,6 +28,7 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 
 		ArgumentException.ThrowIfNullOrEmpty(walletName);
 		ArgumentNullException.ThrowIfNull(device);
+		_device = device;
 
 		WalletName = walletName;
 
@@ -106,17 +111,10 @@ public partial class DetectedHardwareWalletViewModel : RoutableViewModel
 		// can start the vendor bridge software before checking the box instead of hitting an error after confirming.
 		if (SupportsCoinjoin)
 		{
-			Task.Run(async () =>
-			{
-				try
-				{
-					IsBridgeUnavailable = !await UiContext.HardwareWalletInterface.IsCoinJoinTransportAvailableAsync(CancellationToken.None);
-				}
-				catch (Exception ex)
-				{
-					Logger.LogDebug(ex);
-				}
-			});
+			Observable.FromAsync(() => UiContext.HardwareWalletInterface.IsCoinJoinTransportAvailableAsync(_device, CancellationToken.None))
+				.ObserveOn(RxApp.MainThreadScheduler) // The view binds to the answer, so it must arrive on the UI thread.
+				.Subscribe(available => IsBridgeUnavailable = !available, ex => Logger.LogDebug(ex))
+				.DisposeWith(disposables);
 		}
 	}
 }
