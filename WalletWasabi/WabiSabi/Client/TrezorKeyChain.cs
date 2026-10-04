@@ -16,11 +16,11 @@ public class TrezorKeyChain : IKeyChain, IDisposable
 	{
 		Device = device;
 		_keyManager = keyManager;
+		_rounds = new(SignOnDevice);
 	}
 
 	private readonly KeyManager _keyManager;
-	private readonly object _signingLock = new();
-	private (uint256 TxId, Dictionary<OutPoint, WitScript> Witnesses)? _signedTransactionCache;
+	private readonly SignedRoundCache _rounds;
 
 	// The commitment data of the round being mixed. A wallet takes part in one round at a time,
 	// so the commitment seen at input registration is the one to use at signing.
@@ -55,24 +55,7 @@ public class TrezorKeyChain : IKeyChain, IDisposable
 	/// spends one authorized round. The witnesses are cached, so the per-coin calls of the signing phase
 	/// hit the device only once per round.
 	/// </summary>
-	public Transaction Sign(TransactionWithPrecomputedData unsignedCoinJoin, Coin coin)
-	{
-		lock (_signingLock)
-		{
-			var transaction = unsignedCoinJoin.Transaction;
-			if (_signedTransactionCache is not { } cache || cache.TxId != transaction.GetHash())
-			{
-				cache = (transaction.GetHash(), SignOnDevice(unsignedCoinJoin));
-				_signedTransactionCache = cache;
-			}
-
-			transaction = transaction.Clone();
-			var txInput = transaction.Inputs.AsIndexedInputs().FirstOrDefault(input => input.PrevOut == coin.Outpoint)
-				?? throw new InvalidOperationException("Missing input.");
-			txInput.WitScript = cache.Witnesses[coin.Outpoint];
-			return transaction;
-		}
-	}
+	public Transaction Sign(TransactionWithPrecomputedData unsignedCoinJoin, Coin coin) => _rounds.Sign(unsignedCoinJoin, coin);
 
 	private Dictionary<OutPoint, WitScript> SignOnDevice(TransactionWithPrecomputedData unsignedCoinJoin)
 	{
