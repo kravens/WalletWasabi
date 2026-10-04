@@ -70,7 +70,7 @@ public class Wallet : BackgroundService
 		Coins = TransactionProcessor.Coins;
 
 		BatchedPayments = new PaymentBatch(Coins);
-		DestinationProvider = new InternalDestinationProvider(KeyManager);
+		DestinationProvider = new InternalDestinationProvider(KeyManager, scriptType => KeyChain?.CanSign(scriptType) ?? true);
 		OutputProvider = new PaymentAwareOutputProvider(DestinationProvider, BatchedPayments, RandomnessProviders.Secure);
 		_lastFilterProcess = keyManager.GetBestHeight();
 
@@ -135,9 +135,10 @@ public class Wallet : BackgroundService
 
 	public bool IsWalletPrivate() => GetPrivacyPercentage() >= 100;
 
+	// A device that does not sign every script type does not necessarily say so, so only coins it can sign take part in rounds.
 	public IEnumerable<SmartCoin> GetCoinjoinCoinCandidates() => KeyManager.HasCoinJoinAccount
 		? Coins.Where(coin => coin.ScriptType is ScriptType.Taproot)
-		: Coins;
+		: Coins.Where(coin => KeyChain?.CanSign(coin.ScriptType) ?? true);
 
 	/// <summary>Has the device authorize this wallet's rounds and fee cap, which gives the wallet the key chain that signs them.</summary>
 	public async Task AuthorizeCoinJoinOnDeviceAsync(string coordinatorIdentifier, CancellationToken cancellationToken) =>

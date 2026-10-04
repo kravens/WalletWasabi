@@ -63,9 +63,12 @@ internal sealed class UsbHidMacOs : IUsbHid
 		}
 	}
 
-	public static UsbHidMacOs? Open(ushort vendorId, ushort productId)
+	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId, ushort? usagePage) =>
+		EnumerateDevices(vendorId, productId, usagePage).Select(x => x.Serial).Where(x => x is not null).Cast<string>().ToList();
+
+	public static UsbHidMacOs? Open(ushort vendorId, ushort productId, ushort? usagePage)
 	{
-		foreach (var device in EnumerateDevices(vendorId, productId))
+		foreach (var (device, _) in EnumerateDevices(vendorId, productId, usagePage))
 		{
 			// The enumeration owns the device it hands out and releases it once the loop ends; keep it alive for as
 			// long as this object uses it. kIOHIDOptionsTypeSeizeDevice is deliberately not used: seizing would
@@ -86,8 +89,8 @@ internal sealed class UsbHidMacOs : IUsbHid
 		return null;
 	}
 
-	/// <summary>Every attached device matching the vendor and product.</summary>
-	private static IEnumerable<nint> EnumerateDevices(ushort vendorId, ushort productId)
+	/// <summary>Every attached device matching the vendor and product, with its serial.</summary>
+	private static IEnumerable<(nint Device, string? Serial)> EnumerateDevices(ushort vendorId, ushort productId, ushort? usagePage)
 	{
 		var manager = IOHIDManagerCreate(nint.Zero, 0);
 		if (manager == nint.Zero)
@@ -95,7 +98,7 @@ internal sealed class UsbHidMacOs : IUsbHid
 			yield break;
 		}
 
-		var matching = CreateMatchingDictionary(vendorId, productId);
+		var matching = CreateMatchingDictionary(vendorId, productId, usagePage);
 		IOHIDManagerSetDeviceMatching(manager, matching);
 		CFRelease(matching);
 
@@ -115,7 +118,7 @@ internal sealed class UsbHidMacOs : IUsbHid
 			{
 				if (device != nint.Zero)
 				{
-					yield return device;
+					yield return (device, GetStringProperty(device, "SerialNumber"));
 				}
 			}
 		}
@@ -131,13 +134,17 @@ internal sealed class UsbHidMacOs : IUsbHid
 		}
 	}
 
-	private static nint CreateMatchingDictionary(ushort vendorId, ushort productId)
+	private static nint CreateMatchingDictionary(ushort vendorId, ushort productId, ushort? usagePage)
 	{
 		// With the CFType callbacks the dictionary retains what is put in it. Without them it only keeps the
 		// pointers, and IOKit merging the released keys and values later was a segfault on every enumeration.
 		var dict = CFDictionaryCreateMutable(nint.Zero, 0, KCFTypeDictionaryKeyCallBacks, KCFTypeDictionaryValueCallBacks);
 		SetNumber(dict, "VendorID", vendorId);
 		SetNumber(dict, "ProductID", productId);
+		if (usagePage is { } page)
+		{
+			SetNumber(dict, "PrimaryUsagePage", page);
+		}
 		return dict;
 
 		static void SetNumber(nint dict, string key, int value)
@@ -150,6 +157,28 @@ internal sealed class UsbHidMacOs : IUsbHid
 		}
 	}
 
+	private static string? GetStringProperty(nint device, string key)
+	{
+		var cfKey = CreateCfString(key);
+		try
+		{
+			var value = IOHIDDeviceGetProperty(device, cfKey);
+			if (value == nint.Zero)
+			{
+				return null;
+			}
+
+			// 256 is generous for a serial; CFStringGetCString fails rather than truncating if it is not.
+			var buffer = new byte[256];
+			return CFStringGetCString(value, buffer, buffer.Length, CFStringEncoding.Utf8)
+				? System.Text.Encoding.UTF8.GetString(buffer).TrimEnd('\0')
+				: null;
+		}
+		finally
+		{
+			CFRelease(cfKey);
+		}
+	}
 
 	private void RunLoop()
 	{
@@ -302,6 +331,9 @@ internal sealed class UsbHidMacOs : IUsbHid
 	private static extern int IOHIDDeviceClose(nint device, uint options);
 
 	[DllImport(IOKit)]
+	private static extern nint IOHIDDeviceGetProperty(nint device, nint key);
+
+	[DllImport(IOKit)]
 	private static extern int IOHIDDeviceSetReport(nint device, int reportType, nint reportId, byte[] report, nint reportLength);
 
 	[DllImport(IOKit)]
@@ -321,6 +353,9 @@ internal sealed class UsbHidMacOs : IUsbHid
 
 	[DllImport(CoreFoundation)]
 	private static extern nint CFStringCreateWithCString(nint allocator, [MarshalAs(UnmanagedType.LPUTF8Str)] string cStr, CFStringEncoding encoding);
+
+	[DllImport(CoreFoundation)]
+	private static extern bool CFStringGetCString(nint theString, byte[] buffer, nint bufferSize, CFStringEncoding encoding);
 
 	[DllImport(CoreFoundation)]
 	private static extern nint CFNumberCreate(nint allocator, CFNumberType theType, ref int valuePtr);

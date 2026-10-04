@@ -20,9 +20,22 @@ internal sealed class UsbHidWindows : IUsbHid
 		_handle = handle;
 	}
 
-	public static UsbHidWindows? Open(ushort vendorId, ushort productId)
+	public static IReadOnlyList<string> Enumerate(ushort vendorId, ushort productId, ushort? usagePage)
 	{
-		foreach (var path in EnumeratePaths(vendorId, productId))
+		var serials = new List<string>();
+		foreach (var path in EnumeratePaths(vendorId, productId, usagePage))
+		{
+			if (TryReadSerial(path) is { } serial)
+			{
+				serials.Add(serial);
+			}
+		}
+		return serials;
+	}
+
+	public static UsbHidWindows? Open(ushort vendorId, ushort productId, ushort? usagePage)
+	{
+		foreach (var path in EnumeratePaths(vendorId, productId, usagePage))
 		{
 			var handle = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
 				IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
@@ -92,7 +105,7 @@ internal sealed class UsbHidWindows : IUsbHid
 
 	public void Dispose() => _handle.Dispose();
 
-	private static IEnumerable<string> EnumeratePaths(ushort vendorId, ushort productId)
+	private static IEnumerable<string> EnumeratePaths(ushort vendorId, ushort productId, ushort? usagePage)
 	{
 		HidD_GetHidGuid(out Guid hidGuid);
 		var deviceInfoSet = SetupDiGetClassDevs(ref hidGuid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
@@ -107,7 +120,7 @@ internal sealed class UsbHidWindows : IUsbHid
 			for (uint index = 0; SetupDiEnumDeviceInterfaces(deviceInfoSet, IntPtr.Zero, ref hidGuid, index, ref interfaceData); index++)
 			{
 				string? path = GetDevicePath(deviceInfoSet, ref interfaceData);
-				if (path is not null && Matches(path, vendorId, productId))
+				if (path is not null && Matches(path, vendorId, productId, usagePage))
 				{
 					yield return path;
 				}
@@ -119,7 +132,7 @@ internal sealed class UsbHidWindows : IUsbHid
 		}
 	}
 
-	private static bool Matches(string devicePath, ushort vendorId, ushort productId)
+	private static bool Matches(string devicePath, ushort vendorId, ushort productId, ushort? usagePage)
 	{
 		using var handle = CreateFile(devicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
 		if (handle.IsInvalid)
@@ -130,10 +143,42 @@ internal sealed class UsbHidWindows : IUsbHid
 		var attributes = new HIDD_ATTRIBUTES { Size = (uint)Marshal.SizeOf<HIDD_ATTRIBUTES>() };
 		return HidD_GetAttributes(handle, ref attributes)
 			&& attributes.VendorID == vendorId
-			&& attributes.ProductID == productId;
+			&& attributes.ProductID == productId
+			&& (usagePage is null || UsagePageOf(handle) == usagePage);
 	}
 
+	/// <summary>The top-level usage page of the interface's report descriptor, or null when Windows will not say.</summary>
+	private static ushort? UsagePageOf(SafeFileHandle handle)
+	{
+		if (!HidD_GetPreparsedData(handle, out var preparsed))
+		{
+			return null;
+		}
 
+		try
+		{
+			var caps = default(HIDP_CAPS);
+			return HidP_GetCaps(preparsed, ref caps) == HIDP_STATUS_SUCCESS ? caps.UsagePage : null;
+		}
+		finally
+		{
+			HidD_FreePreparsedData(preparsed);
+		}
+	}
+
+	private static string? TryReadSerial(string devicePath)
+	{
+		using var handle = CreateFile(devicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+		if (handle.IsInvalid)
+		{
+			return null;
+		}
+
+		var buffer = new char[128];
+		return HidD_GetSerialNumberString(handle, buffer, (uint)(buffer.Length * sizeof(char)))
+			? new string(buffer).TrimEnd('\0')
+			: null;
+	}
 
 	private static string? GetDevicePath(IntPtr deviceInfoSet, ref SP_DEVICE_INTERFACE_DATA interfaceData)
 	{
@@ -173,6 +218,7 @@ internal sealed class UsbHidWindows : IUsbHid
 	private const uint DIGCF_PRESENT = 0x2;
 	private const uint DIGCF_DEVICEINTERFACE = 0x10;
 	private const int ERROR_OPERATION_ABORTED = 995;
+	private const int HIDP_STATUS_SUCCESS = 0x00110000;
 	private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
 	[StructLayout(LayoutKind.Sequential)]
@@ -182,6 +228,14 @@ internal sealed class UsbHidWindows : IUsbHid
 		public Guid InterfaceClassGuid;
 		public uint Flags;
 		public IntPtr Reserved;
+	}
+
+	/// <summary>Only the first two fields are read; the size keeps the 64 bytes Windows checks.</summary>
+	[StructLayout(LayoutKind.Sequential, Size = 64)]
+	private struct HIDP_CAPS
+	{
+		public ushort Usage;
+		public ushort UsagePage;
 	}
 
 	[StructLayout(LayoutKind.Sequential)]
@@ -198,6 +252,18 @@ internal sealed class UsbHidWindows : IUsbHid
 
 	[DllImport("hid.dll")]
 	private static extern bool HidD_GetAttributes(SafeFileHandle handle, ref HIDD_ATTRIBUTES attributes);
+
+	[DllImport("hid.dll")]
+	private static extern bool HidD_GetPreparsedData(SafeFileHandle handle, out IntPtr preparsedData);
+
+	[DllImport("hid.dll")]
+	private static extern bool HidD_FreePreparsedData(IntPtr preparsedData);
+
+	[DllImport("hid.dll")]
+	private static extern int HidP_GetCaps(IntPtr preparsedData, ref HIDP_CAPS capabilities);
+
+	[DllImport("hid.dll", CharSet = CharSet.Unicode)]
+	private static extern bool HidD_GetSerialNumberString(SafeFileHandle handle, char[] buffer, uint bufferLength);
 
 	[DllImport("setupapi.dll", CharSet = CharSet.Unicode)]
 	private static extern IntPtr SetupDiGetClassDevs(ref Guid classGuid, IntPtr enumerator, IntPtr hwndParent, uint flags);
