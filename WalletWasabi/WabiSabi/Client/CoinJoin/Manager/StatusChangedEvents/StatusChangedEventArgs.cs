@@ -29,7 +29,8 @@ public enum CoinjoinError
 	MinInputCountTooLow,
 	CoordinatorLiedAboutInputs,
 	NotEnoughConfirmedUnprivateBalance,
-	DeviceAuthorizationFailed
+	DeviceAuthorizationFailed,
+	DeviceRefusedToSign
 }
 
 public class StatusChangedEventArgs : EventArgs

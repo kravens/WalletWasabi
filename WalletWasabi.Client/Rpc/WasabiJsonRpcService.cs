@@ -167,12 +167,21 @@ public class WasabiJsonRpcService : IJsonRpcService
 		};
 	}
 
+	/// <summary>Adds the taproot account to a Coldcard coinjoin wallet; the Coldcard needs Edge firmware to sign taproot.</summary>
+	[JsonRpcMethod("enabletaproot")]
+	public async Task<object> EnableTaprootAsync()
+	{
+		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
+		await Global.HardwareWallets.EnableTaprootAsync(activeWallet.KeyManager, CancellationToken.None).ConfigureAwait(false);
+		return new JsonRpcResult { ["accounts"] = GetAccounts(activeWallet.KeyManager) };
+	}
+
 	/// <summary>
 	/// Sets the limits the device is asked to approve when it authorizes coinjoin rounds (a fee cap below the going
 	/// rate refuses every round); both are optional, whatever is left out keeps its current value.
 	/// </summary>
 	[JsonRpcMethod("setcoinjoinlimits")]
-	public JsonRpcResult SetCoinJoinLimits(int? maxRounds = null, decimal? maxMiningFeeRate = null)
+	public JsonRpcResult SetCoinJoinLimits(int? maxRounds = null, decimal? maxMiningFeeRate = null, long? maxSatsLeaving = null, int? maxTransactionsPerPeriod = null, int? minRoundInputs = null)
 	{
 		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
 
@@ -182,6 +191,10 @@ public class WasabiJsonRpcService : IJsonRpcService
 		}
 
 		HardwareWalletService.AssertAuthorizationLimits(maxRounds, maxMiningFeeRate);
+		if (maxSatsLeaving is not null || maxTransactionsPerPeriod is not null || minRoundInputs is not null)
+		{
+			HardwareWalletService.SetDevicePolicyLimits(activeWallet.KeyManager, maxSatsLeaving, maxTransactionsPerPeriod, minRoundInputs);
+		}
 
 		if (maxRounds is { } rounds)
 		{
@@ -199,6 +212,9 @@ public class WasabiJsonRpcService : IJsonRpcService
 		{
 			["maxRounds"] = activeWallet.KeyManager.CoinJoinDeviceMaxRounds,
 			["maxMiningFeeRate"] = activeWallet.KeyManager.CoinJoinDeviceMaxMiningFeeRate,
+			["maxSatsLeaving"] = activeWallet.KeyManager.ColdcardMaxSatsLeaving,
+			["maxTransactionsPerPeriod"] = activeWallet.KeyManager.ColdcardMaxTransactionsPerPeriod,
+			["minRoundInputs"] = activeWallet.KeyManager.ColdcardMinInputs,
 			// A running authorization was granted for the previous limits; the device has to approve again.
 			["appliesFromNextAuthorization"] = true
 		};
