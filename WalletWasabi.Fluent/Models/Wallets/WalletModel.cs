@@ -72,6 +72,9 @@ public partial interface IWalletModel : INotifyPropertyChanged
 
 	bool HasCoinJoinAccount { get; }
 
+	/// <summary>Whether a device has to authorize a batch of rounds before coinjoining can start. Such a device approves a budget, never a destination, so no payment can be made inside a round.</summary>
+	bool CoinJoinNeedsDeviceAuthorization { get; }
+
 	bool CanEnableCoinjoin { get; }
 
 	Task EnableCoinjoinAsync(Action<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken);
@@ -199,9 +202,15 @@ public partial class WalletModel : ReactiveObject, IWalletModel
 
 	public bool IsHardwareWallet => Wallet.KeyManager.IsHardwareWallet;
 
-	public bool CanCoinJoin => !IsWatchOnlyWallet || HasCoinJoinAccount;
+	private bool CoinJoinIsSignedByDevice => Wallet.KeyManager.IsCoinJoinSignedByDevice;
 
+	public bool CanCoinJoin => !IsWatchOnlyWallet || CoinJoinIsSignedByDevice;
+
+	// Asked about the account model, not the vendor: a device that signs from the wallet's default accounts
+	// under its own policy has no separate coinjoin account to keep apart.
 	public bool HasCoinJoinAccount => Wallet.KeyManager.HasCoinJoinAccount;
+
+	public bool CoinJoinNeedsDeviceAuthorization => CoinJoinIsSignedByDevice;
 
 	public bool CanEnableCoinjoin => Wallet.KeyManager.CanAddCoinJoinAccount;
 

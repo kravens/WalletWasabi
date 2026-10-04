@@ -7,10 +7,13 @@ using System.Threading.Tasks;
 using System.Linq;
 using WalletWasabi.Blockchain.Keys;
 using WalletWasabi.Hwi.Trezor;
+using WalletWasabi.Hwi.Models;
+using WalletWasabi.Hwi.Exceptions;
 using WalletWasabi.Tests.Helpers;
 using WalletWasabi.Tests.UnitTests.Hwi;
 using WalletWasabi.WabiSabi.Client;
 using WalletWasabi.Wallets;
+using WalletWasabi.Wallets.Backends;
 using Xunit;
 
 namespace WalletWasabi.Tests.UnitTests.Wallets;
@@ -253,14 +256,14 @@ public class HardwareWalletServiceTests
 	{
 		var seed = KeyManager.CreateNew(out _, password: "", Network.Main);
 		var walletFilePath = Path.Combine(await Common.GetEmptyWorkDirAsync(), "wallet.json");
-		using var service = new HardwareWalletService(Network.Main);
+		using var trezor = new TrezorBackend(Network.Main, _ => { });
 		using var transport = new ScriptedTransport();
 		transport.Responses.Enqueue(PublicKey(seed.SegwitExtPubKey));
 		transport.Responses.Enqueue(Address(SegwitAddress(seed, 0)));
 		using var device = new TrezorDevice(transport);
 		var shown = new List<BitcoinAddress>();
 
-		var keyManager = await service.ReadAccountsAsync(device, seed.MasterFingerprint!.Value, walletFilePath, enableCoinjoin: false, shown.Add, CancellationToken.None);
+		var keyManager = await trezor.ReadAccountsAsync(device, seed.MasterFingerprint!.Value, walletFilePath, enableCoinjoin: false, shown.Add, CancellationToken.None);
 
 		Assert.Equal(TrezorMessageType.GetAddress, transport.Received.Last().MessageType);
 		Assert.Equal(SegwitAddress(seed, 0), Assert.Single(shown));
@@ -279,7 +282,7 @@ public class HardwareWalletServiceTests
 		var segwitAddress = segwit.Derive(0).Derive(0).PubKey.GetAddress(ScriptPubKeyType.Segwit, Network.Main);
 		var coinJoinAddress = coinJoin.Derive(0).Derive(0).PubKey.GetAddress(ScriptPubKeyType.TaprootBIP86, Network.Main);
 		var walletFilePath = Path.Combine(await Common.GetEmptyWorkDirAsync(), "wallet.json");
-		using var service = new HardwareWalletService(Network.Main);
+		using var trezor = new TrezorBackend(Network.Main, _ => { });
 		using var transport = new ScriptedTransport();
 		transport.Responses.Enqueue(PublicKey(segwit));
 		transport.Responses.Enqueue(Address(segwitAddress));
@@ -290,7 +293,7 @@ public class HardwareWalletServiceTests
 		using var device = new TrezorDevice(transport);
 		var shown = new List<BitcoinAddress>();
 
-		var keyManager = await service.ReadAccountsAsync(device, seed.Neuter().PubKey.GetHDFingerPrint(), walletFilePath, enableCoinjoin: true, shown.Add, CancellationToken.None);
+		var keyManager = await trezor.ReadAccountsAsync(device, seed.Neuter().PubKey.GetHDFingerPrint(), walletFilePath, enableCoinjoin: true, shown.Add, CancellationToken.None);
 
 		Assert.Equal(
 			[
@@ -315,14 +318,14 @@ public class HardwareWalletServiceTests
 	{
 		var seed = KeyManager.CreateNew(out _, password: "", Network.Main);
 		var walletFilePath = Path.Combine(await Common.GetEmptyWorkDirAsync(), "wallet.json");
-		using var service = new HardwareWalletService(Network.Main);
+		using var trezor = new TrezorBackend(Network.Main, _ => { });
 		using var transport = new ScriptedTransport();
 		transport.Responses.Enqueue(PublicKey(seed.SegwitExtPubKey));
 		transport.Responses.Enqueue(Address(SegwitAddress(seed, 1)));
 		using var device = new TrezorDevice(transport);
 
 		var exception = await Assert.ThrowsAsync<HardwareWalletException>(
-			() => service.ReadAccountsAsync(device, seed.MasterFingerprint!.Value, walletFilePath, enableCoinjoin: false, addressToConfirm: null, CancellationToken.None));
+			() => trezor.ReadAccountsAsync(device, seed.MasterFingerprint!.Value, walletFilePath, enableCoinjoin: false, addressToConfirm: null, CancellationToken.None));
 
 		Assert.Contains("different address", exception.Message);
 		Assert.False(File.Exists(walletFilePath));
