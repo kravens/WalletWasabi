@@ -1,5 +1,3 @@
-using WalletWasabi.Hwi.Models;
-
 namespace WalletWasabi.Blockchain.Keys;
 
 /// <summary>
@@ -19,8 +17,4 @@ public static class Slip25
 
 	public static bool IsSlip25KeyPath(this KeyPath keyPath) =>
 		keyPath.Indexes is [Purpose, ..];
-
-	/// <summary>Whether a detected device can sign coinjoins from a SLIP-25 account, to offer it while importing.</summary>
-	public static bool SupportsCoinJoin(this HardwareWalletModels model) =>
-		model is HardwareWalletModels.Trezor_T or HardwareWalletModels.Trezor_T_Simulator or HardwareWalletModels.Trezor_Safe_3 or HardwareWalletModels.Trezor_Safe_5;
 }
