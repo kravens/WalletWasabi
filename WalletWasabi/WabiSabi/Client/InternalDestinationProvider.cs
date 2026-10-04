@@ -2,20 +2,30 @@ namespace WalletWasabi.WabiSabi.Client;
 
 public class InternalDestinationProvider : IDestinationProvider
 {
-	public InternalDestinationProvider(KeyManager keyManager)
+	/// <param name="canSign">Whether the wallet's signer can sign a script type; the outputs of this round are the inputs of the next, so a device gets none of a type it cannot sign.</param>
+	public InternalDestinationProvider(KeyManager keyManager, Func<ScriptType, bool>? canSign = null)
 	{
 		_keyManager = keyManager;
+		_canSign = canSign ?? (_ => true);
 	}
 
 	private readonly KeyManager _keyManager;
+	private readonly Func<ScriptType, bool> _canSign;
 
 	// Read live, so a coinjoin account added to a loaded wallet is used without restarting it.
 	// A device authorization is bound to the SLIP-25 taproot account, so all outputs must stay in it.
-	public ImmutableHashSet<ScriptType> SupportedScriptTypes => _keyManager.HasCoinJoinAccount
-		? [ScriptType.Taproot]
-		: _keyManager.TaprootExtPubKey is not null
-			? [ScriptType.P2WPKH, ScriptType.Taproot]
-			: [ScriptType.P2WPKH];
+	public ImmutableHashSet<ScriptType> SupportedScriptTypes
+	{
+		get
+		{
+			ImmutableHashSet<ScriptType> accounts = _keyManager.HasCoinJoinAccount
+				? [ScriptType.Taproot]
+				: _keyManager.TaprootExtPubKey is not null
+					? [ScriptType.P2WPKH, ScriptType.Taproot]
+					: [ScriptType.P2WPKH];
+			return accounts.Where(_canSign).ToImmutableHashSet();
+		}
+	}
 
 	public IEnumerable<IDestination> GetNextDestinations(int count, bool preferTaproot)
 	{
