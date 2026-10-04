@@ -36,7 +36,7 @@ public class PassportKeyChain : IKeyChain, IDisposable
 	public IPassportDevice Device => _device;
 
 	/// <summary>The approved session runs out of rounds or of time; it has to be approved again on the device.</summary>
-	public bool NeedsReauthorization => Volatile.Read(ref _roundsRemaining) <= 0 || DateTimeOffset.UtcNow >= _expiresAt;
+	public bool NeedsAuthorization => Volatile.Read(ref _roundsRemaining) <= 0 || DateTimeOffset.UtcNow >= _expiresAt;
 
 	/// <summary>The device verifies the whole round over USB before it signs.</summary>
 	public bool SigningTakesTime => true;

@@ -71,7 +71,7 @@ public class KruxBackendTests
 
 		Assert.Equal(new FeeRate(5m), keyChain.MaxMiningFeeRate);
 		Assert.False(keyChain.CanSign(ScriptType.P2WPKH)); // what the bridge reported
-		Assert.False(keyChain.NeedsReauthorization);
+		Assert.False(keyChain.NeedsAuthorization);
 	}
 
 	[Fact]

@@ -36,7 +36,7 @@ public class KruxKeyChain : IKeyChain, IDisposable
 	public KruxClient Client => _client;
 
 	/// <summary>The session the user approved on the device runs out of rounds; it has to be approved again.</summary>
-	public bool NeedsReauthorization => Volatile.Read(ref _roundsRemaining) <= 0;
+	public bool NeedsAuthorization => Volatile.Read(ref _roundsRemaining) <= 0;
 
 	/// <summary>The device has to be asked over a UART or a HID session, and it verifies the whole round before it signs.</summary>
 	public bool SigningTakesTime => true;

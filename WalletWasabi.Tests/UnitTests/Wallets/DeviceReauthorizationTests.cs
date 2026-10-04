@@ -17,7 +17,7 @@ public class DeviceReauthorizationTests
 {
 	private class SpentKeyChain : IKeyChain
 	{
-		public bool NeedsReauthorization => true;
+		public bool NeedsAuthorization => true;
 
 		public bool SigningTakesTime => true;
 
@@ -45,7 +45,7 @@ public class DeviceReauthorizationTests
 	public void CapabilitiesAreReadableThroughTheInterface()
 	{
 		IKeyChain spent = new SpentKeyChain();
-		Assert.True(spent.NeedsReauthorization);
+		Assert.True(spent.NeedsAuthorization);
 		Assert.True(spent.SigningTakesTime);
 		Assert.Equal(20, spent.MinRoundInputs);
 		Assert.False(spent.CanSign(ScriptType.Taproot));
@@ -57,7 +57,7 @@ public class DeviceReauthorizationTests
 	{
 		// A software key chain must not accidentally opt into any of the device-only rules.
 		IKeyChain plain = new PlainKeyChain();
-		Assert.False(plain.NeedsReauthorization);
+		Assert.False(plain.NeedsAuthorization);
 		Assert.False(plain.SigningTakesTime);
 		Assert.Null(plain.MinRoundInputs);
 		Assert.True(plain.CanSign(ScriptType.Taproot));
@@ -72,8 +72,8 @@ public class DeviceReauthorizationTests
 		IKeyChain spent = new SpentKeyChain();
 		IKeyChain live = new PlainKeyChain();
 
-		Assert.True(none is null or { NeedsReauthorization: true });
-		Assert.True(spent is null or { NeedsReauthorization: true });
-		Assert.False(live is null or { NeedsReauthorization: true });
+		Assert.True(none is null or { NeedsAuthorization: true });
+		Assert.True(spent is null or { NeedsAuthorization: true });
+		Assert.False(live is null or { NeedsAuthorization: true });
 	}
 }

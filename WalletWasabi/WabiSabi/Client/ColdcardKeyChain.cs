@@ -46,7 +46,7 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	public bool RoundsExhausted => Volatile.Read(ref _roundsSigned) >= _maxRounds;
 
 	/// <summary>The device authorized a fixed number of rounds; once they are spent it has to be asked again.</summary>
-	public bool NeedsReauthorization => RoundsExhausted;
+	public bool NeedsAuthorization => RoundsExhausted;
 
 	/// <inheritdoc />
 	public int? MinRoundInputs => _keyManager.ColdcardMinInputs > 0 ? _keyManager.ColdcardMinInputs : null;

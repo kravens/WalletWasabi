@@ -105,7 +105,7 @@ internal class KruxBackend : IHardwareWalletBackend
 		FeeRate maxMiningFeeRate,
 		CancellationToken cancellationToken)
 	{
-		if (existingKeyChain is { NeedsReauthorization: false } and KruxKeyChain connected)
+		if (existingKeyChain is { NeedsAuthorization: false } and KruxKeyChain connected)
 		{
 			connected.MaxMiningFeeRate = maxMiningFeeRate;
 			return connected;

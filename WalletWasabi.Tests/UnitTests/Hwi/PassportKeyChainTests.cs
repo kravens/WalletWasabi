@@ -32,13 +32,13 @@ public class PassportKeyChainTests
 		};
 		using var keyChain = new PassportKeyChain(device, FakePassportDevice.SessionToken.ToArray(), keyManager, roundsRemaining: 1, DateTimeOffset.UtcNow.AddHours(1));
 
-		Assert.False(keyChain.NeedsReauthorization);
+		Assert.False(keyChain.NeedsAuthorization);
 		var signed = keyChain.Sign(round, coins[0]);
 		keyChain.Sign(round, coins[0]);
 
 		Assert.Equal($"sign {Token}", Assert.Single(device.Calls));
 		Assert.Single(signed.Inputs[0].WitScript.Pushes);
-		Assert.True(keyChain.NeedsReauthorization);
+		Assert.True(keyChain.NeedsAuthorization);
 	}
 
 	[Fact]
@@ -67,9 +67,9 @@ public class PassportKeyChainTests
 		using var spent = Chain(new FakePassportDevice(), roundsRemaining: 0);
 		using var expired = Chain(new FakePassportDevice(), expiresAt: DateTimeOffset.UtcNow.AddSeconds(-1));
 
-		Assert.False(fresh.NeedsReauthorization);
-		Assert.True(spent.NeedsReauthorization);
-		Assert.True(expired.NeedsReauthorization);
+		Assert.False(fresh.NeedsAuthorization);
+		Assert.True(spent.NeedsAuthorization);
+		Assert.True(expired.NeedsAuthorization);
 		Assert.True(fresh.SigningTakesTime);
 	}
 

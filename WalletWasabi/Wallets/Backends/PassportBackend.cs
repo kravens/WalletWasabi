@@ -90,7 +90,7 @@ internal class PassportBackend : IHardwareWalletBackend
 		FeeRate maxMiningFeeRate,
 		CancellationToken cancellationToken)
 	{
-		if (existingKeyChain is { NeedsReauthorization: false } and PassportKeyChain live && live.Device.IsAlive())
+		if (existingKeyChain is { NeedsAuthorization: false } and PassportKeyChain live && live.Device.IsAlive())
 		{
 			live.MaxMiningFeeRate = maxMiningFeeRate;
 			return live;

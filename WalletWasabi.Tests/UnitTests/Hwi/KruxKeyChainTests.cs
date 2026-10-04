@@ -110,13 +110,13 @@ public class KruxKeyChainTests
 		};
 		using var keyChain = Chain(kruxd, keyManager, roundsRemaining: 1, [ScriptType.Taproot]);
 
-		Assert.False(keyChain.NeedsReauthorization);
+		Assert.False(keyChain.NeedsAuthorization);
 		var signed = keyChain.Sign(round, coins[0]);
 		keyChain.Sign(round, coins[0]);
 
 		Assert.Single(kruxd.Requests);
 		Assert.Single(signed.Inputs[0].WitScript.Pushes);
-		Assert.True(keyChain.NeedsReauthorization);
+		Assert.True(keyChain.NeedsAuthorization);
 	}
 
 	[Fact]

@@ -50,7 +50,7 @@ public class PassportBackendTests
 
 		Assert.Equal(PassportBackend.ComposePolicy(Network.Main, "coordinator", 10, new FeeRate(5m)), device.ApprovedPolicy);
 		Assert.Equal(new FeeRate(5m), keyChain.MaxMiningFeeRate);
-		Assert.False(keyChain.NeedsReauthorization);
+		Assert.False(keyChain.NeedsAuthorization);
 		Assert.Same(device, keyChain.Device);
 	}
 
