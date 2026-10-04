@@ -4,13 +4,14 @@ namespace WalletWasabi.Hwi;
 
 /// <summary>
 /// Which hardware vendor signs a coinjoin wallet's rounds. Vendors differ in how the user authorizes a batch
-/// (Trezor: an on-device preauthorization bound to a SLIP-25 account) but not in how they sign, which is why
-/// signing goes through <c>IKeyChain</c>. Persisted by number in the wallet file, so only ever append.
+/// (Trezor: an on-device preauthorization bound to a SLIP-25 account; Coldcard: an HSM policy) but not in how
+/// they sign, which is why signing goes through <c>IKeyChain</c>. Persisted by number in the wallet file, so only ever append.
 /// </summary>
 public enum HardwareCoinJoinVendor
 {
 	None = 0,
 	Trezor = 1,
+	Coldcard = 2,
 }
 
 public static class HardwareCoinJoin
@@ -23,6 +24,8 @@ public static class HardwareCoinJoin
 				or HardwareWalletModels.Trezor_T_Simulator
 				or HardwareWalletModels.Trezor_Safe_3
 				or HardwareWalletModels.Trezor_Safe_5 => HardwareCoinJoinVendor.Trezor,
+			HardwareWalletModels.Coldcard
+				or HardwareWalletModels.Coldcard_Simulator => HardwareCoinJoinVendor.Coldcard,
 			_ => HardwareCoinJoinVendor.None,
 		};
 
