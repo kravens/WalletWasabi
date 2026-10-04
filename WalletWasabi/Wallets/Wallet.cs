@@ -50,7 +50,7 @@ public class Wallet : BackgroundService
 		KeyManager = keyManager;
 		ServiceConfiguration = serviceConfiguration;
 		CpfpInfoProvider = cpfpInfoProvider;
-		DestinationProvider = new InternalDestinationProvider(KeyManager);
+		DestinationProvider = new InternalDestinationProvider(KeyManager, scriptType => KeyChain?.CanSign(scriptType) ?? true);
 		_filterStore = filterStore;
 		TransactionStore = transactionStore;
 		FilterHeaderChain = filterHeaderChain;
@@ -126,10 +126,11 @@ public class Wallet : BackgroundService
 
 	public bool IsWalletPrivate() => GetPrivacyPercentage() >= 100;
 
-	// A device coinjoin authorization is bound to the SLIP-25 taproot account, so only its coins can take part in rounds.
+	// A device coinjoin authorization is bound to the SLIP-25 taproot account, so only its coins can take part in rounds;
+	// and a device that does not sign every script type does not necessarily say so, so only coins it can sign do.
 	public IEnumerable<SmartCoin> GetCoinjoinCoinCandidates() => KeyManager.HasCoinJoinAccount
 		? Coins.Where(coin => coin.ScriptType is ScriptType.Taproot)
-		: Coins;
+		: Coins.Where(coin => KeyChain?.CanSign(coin.ScriptType) ?? true);
 
 	/// <summary>Has the device authorize this wallet's rounds and fee cap, which gives the wallet the key chain that signs them.</summary>
 	public async Task AuthorizeCoinJoinOnDeviceAsync(string coordinatorIdentifier, CancellationToken cancellationToken) =>

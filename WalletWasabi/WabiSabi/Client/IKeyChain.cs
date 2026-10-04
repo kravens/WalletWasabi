@@ -14,6 +14,9 @@ public interface IKeyChain
 	/// <summary>Fewest inputs a round must have before the signer will sign it, or null. The device enforces it either way; this only keeps the client out of rounds the device is certain to refuse.</summary>
 	int? MinRoundInputs => null;
 
+	/// <summary>True when the signer can produce a signature for this script type. A device handed an input it cannot sign does not necessarily say so, so the client must not register one.</summary>
+	bool CanSign(ScriptType scriptType) => true;
+
 	OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData committedData);
 
 	Transaction Sign(TransactionWithPrecomputedData unsignedCoinJoin, Coin coin);
