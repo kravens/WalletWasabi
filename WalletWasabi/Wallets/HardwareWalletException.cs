@@ -18,6 +18,10 @@ public class HardwareWalletNotFoundException : HardwareWalletException
 	public HardwareWalletNotFoundException(string message) : base(message)
 	{
 	}
+
+	public HardwareWalletNotFoundException(string message, Exception innerException) : base(message, innerException)
+	{
+	}
 }
 
 /// <summary>Nothing is running that could reach the device at all; the user has to install or start it (<see cref="HardwareWalletService.BridgeDownloadUrl"/> says where).</summary>

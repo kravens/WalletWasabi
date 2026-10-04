@@ -38,4 +38,9 @@ internal interface IHardwareWalletBackend : IDisposable
 
 	/// <summary>Drops the wallet's key chain and the device session it holds, for a wallet that no longer needs the device; a transport that serves other wallets stays.</summary>
 	void ReleaseFor(KeyManager keyManager);
+
+	/// <summary>Most vendors start nothing of their own: what they hold, they hold per wallet, and <see cref="ReleaseFor"/> lets go of it.</summary>
+	void IDisposable.Dispose()
+	{
+	}
 }

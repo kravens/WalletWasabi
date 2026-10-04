@@ -38,6 +38,7 @@ public partial class WalletSettingsViewModel : RoutableViewModel
     [AutoNotify] private bool _isAutomaticDefaultSendWorkflow;
     [AutoNotify] private string? _addressToConfirm;
     [AutoNotify(SetterModifier = AccessModifier.Private)] private bool _canEnableCoinjoin;
+    [AutoNotify(SetterModifier = AccessModifier.Private)] private bool _canEnableTaproot;
     [AutoNotify(SetterModifier = AccessModifier.Private)] private bool _isRestartPending;
 
     public WalletSettingsViewModel(UiContext uiContext, IWalletModel walletModel) : base(uiContext)
@@ -123,8 +124,7 @@ public partial class WalletSettingsViewModel : RoutableViewModel
             try
             {
                 await walletModel.EnableCoinjoinAsync(new Progress<BitcoinAddress>(address => AddressToConfirm = address.ToString()), System.Threading.CancellationToken.None);
-                CanEnableCoinjoin = walletModel.CanEnableCoinjoin;
-                IsRestartPending = true;
+                OnDeviceAccountsChanged(walletModel);
             }
             catch (Exception ex)
             {
@@ -134,6 +134,22 @@ public partial class WalletSettingsViewModel : RoutableViewModel
             finally
             {
                 AddressToConfirm = null;
+            }
+        });
+
+        // A Coldcard wallet is imported with segwit only; its taproot account is added on request, then the application has to restart like above.
+        CanEnableTaproot = walletModel.CanEnableTaproot;
+        EnableTaprootCommand = ReactiveCommand.CreateFromTask(async () =>
+        {
+            try
+            {
+                await walletModel.EnableTaprootAsync(System.Threading.CancellationToken.None);
+                OnDeviceAccountsChanged(walletModel);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex);
+                await ShowErrorAsync("Enable taproot", ex.ToUserFriendlyString(), "Could not enable taproot.");
             }
         });
 
@@ -215,6 +231,14 @@ public partial class WalletSettingsViewModel : RoutableViewModel
     public ICommand EnableCoinjoinCommand { get; }
     public ICommand RestartNowCommand { get; }
     public ICommand RestartLaterCommand { get; }
+    public ICommand EnableTaprootCommand { get; }
+
+    private void OnDeviceAccountsChanged(IWalletModel walletModel)
+    {
+        CanEnableCoinjoin = walletModel.CanEnableCoinjoin;
+        CanEnableTaproot = walletModel.CanEnableTaproot;
+        IsRestartPending = true;
+    }
 
     protected override void OnNavigatedTo(bool isInHistory, CompositeDisposable disposables)
     {

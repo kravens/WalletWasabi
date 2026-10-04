@@ -50,6 +50,7 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 	private const string DeviceTransportNotFoundMessage = "Cannot reach the device, start its bridge software";
 	private const string CoinJoinAccountEmptyMessage = "Deposit to a coinjoin account address";
 	private const string DeviceAuthorizationFailedMessage = "The device did not authorize, press Play to retry";
+	private const string DeviceRefusedToSignMessage = "The device refused to sign, check its limits in the settings";
 
 	private readonly IWalletModel _wallet;
 	private readonly Wallet _walletInstance;
@@ -418,6 +419,7 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 					CoinjoinError.DeviceTransportNotFound => DeviceTransportNotFoundMessage,
 					CoinjoinError.DeviceNotFound => DeviceNotFoundMessage,
 					CoinjoinError.DeviceAuthorizationFailed => DeviceAuthorizationFailedMessage,
+					CoinjoinError.DeviceRefusedToSign => DeviceRefusedToSignMessage,
 					_ => GeneralErrorMessage
 				};
 

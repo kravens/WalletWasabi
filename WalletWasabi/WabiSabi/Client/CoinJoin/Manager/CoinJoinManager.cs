@@ -570,6 +570,7 @@ public class CoinJoinManager : BackgroundService
 		var destinationProvider = finishedCoinJoin.OutputWallet.OutputProvider.DestinationProvider;
 		var batchedPayments = wallet.BatchedPayments;
 		CoinJoinClientException? cjClientException = null;
+		CoinjoinError? deviceStop = null;
 		var forceStop = false;
 		try
 		{
@@ -621,6 +622,19 @@ public class CoinJoinManager : BackgroundService
 		catch (InvalidOperationException ioe)
 		{
 			Logger.LogWarning(ioe);
+		}
+		catch (HardwareWalletNotFoundException e)
+		{
+			// The device went away mid-round. Nothing to retry until it is back, so stop and say so.
+			Logger.LogWarning(FormatLog($"The device could not be reached: {e.Message}", wallet));
+			deviceStop = CoinjoinError.DeviceNotFound;
+		}
+		catch (HardwareWalletException e) when (wallet.KeyChain is not { NeedsAuthorization: true })
+		{
+			// The device refused under its own policy. Retrying builds the same transaction, and every retry
+			// spends one of the rounds the device was authorized for, so stop and say why.
+			Logger.LogWarning(FormatLog($"The device refused to sign: {e.Message}", wallet));
+			deviceStop = CoinjoinError.DeviceRefusedToSign;
 		}
 		catch (OperationCanceledException)
 		{
@@ -674,6 +688,12 @@ public class CoinJoinManager : BackgroundService
 			|| cancellationToken.IsCancellationRequested)
 		{
 			NotifyWalletStoppedCoinJoin(wallet);
+		}
+		else if (deviceStop is { } reason)
+		{
+			// Stopped first: entering the stopped state resets the front end's text, so the reason comes last to stay on screen.
+			NotifyWalletStoppedCoinJoin(wallet);
+			NotifyCoinJoinStartError(wallet, reason);
 		}
 		else if (wallet.IsWalletPrivate() && !wallet.BatchedPayments.AreTherePendingPayments)
 		{
@@ -897,9 +917,10 @@ public class CoinJoinManager : BackgroundService
 
 public record CoinJoinConfiguration(string CoordinatorIdentifier,  decimal MaxCoinJoinMiningFeeRate, int AbsoluteMinInputCount, bool AllowSoloCoinjoining)
 {
-	/// <summary>The configuration this signer can honour: never a higher fee rate than its device was authorized with.</summary>
-	public CoinJoinConfiguration CappedBy(IKeyChain keyChain) =>
-		keyChain.MaxMiningFeeRate is { } cap && cap.SatoshiPerByte < MaxCoinJoinMiningFeeRate
-			? this with { MaxCoinJoinMiningFeeRate = cap.SatoshiPerByte }
-			: this;
+	/// <summary>The configuration this signer can honour: never a higher fee rate than its device was authorized with, nor a smaller round than its device signs.</summary>
+	public CoinJoinConfiguration CappedBy(IKeyChain keyChain) => this with
+	{
+		MaxCoinJoinMiningFeeRate = keyChain.MaxMiningFeeRate is { } cap ? Math.Min(cap.SatoshiPerByte, MaxCoinJoinMiningFeeRate) : MaxCoinJoinMiningFeeRate,
+		AbsoluteMinInputCount = Math.Max(keyChain.MinRoundInputs ?? 0, AbsoluteMinInputCount),
+	};
 }
