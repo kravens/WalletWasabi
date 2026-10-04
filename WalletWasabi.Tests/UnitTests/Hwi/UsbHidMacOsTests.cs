@@ -1,3 +1,4 @@
+using System.Linq;
 using WalletWasabi.Hwi.Usb;
 using Xunit;
 
@@ -16,7 +17,8 @@ public class UsbHidMacOsTests
 
 		for (int i = 0; i < 300; i++)
 		{
-			Assert.Null(UsbHid.TryOpen(0xd13e, 0xcc10)); // Coldcard, not attached in CI.
+			Assert.Empty(UsbHid.Enumerate(0xd13e, 0xcc10, usagePage: null)); // Coldcard, not attached in CI.
+			_ = UsbHid.Enumerate(0x1209, 0x5a52, usagePage: 0xff00).Count;
 		}
 	}
 }

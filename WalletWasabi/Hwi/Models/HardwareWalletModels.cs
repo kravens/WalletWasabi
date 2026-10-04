@@ -63,4 +63,8 @@ public enum HardwareWalletModels
 
 	[FriendlyName("Jade")]
 	Jade,
+
+	// Not an HWI model: found over its own HID interface, see the Passport backend.
+	[FriendlyName("Foundation Passport")]
+	Foundation_Passport,
 }

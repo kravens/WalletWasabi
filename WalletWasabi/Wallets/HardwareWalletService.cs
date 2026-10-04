@@ -29,7 +29,7 @@ public class HardwareWalletService : IDisposable
 			_transportStatus = status;
 			TransportStatusChanged?.Invoke(this, status);
 		});
-		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network) }.ToDictionary(backend => backend.Vendor);
+		_backends = new IHardwareWalletBackend[] { _trezor, new ColdcardBackend(network), new PassportBackend(network) }.ToDictionary(backend => backend.Vendor);
 	}
 
 	private readonly Network _network;
@@ -141,6 +141,9 @@ public class HardwareWalletService : IDisposable
 			HardwareCoinJoinVendor.Coldcard =>
 				"Enforced by the device policy: the fee-rate cap, how much of your value may leave in a single "
 				+ "transaction, how many transactions it signs in total and per period, and the smallest round it signs.",
+			HardwareCoinJoinVendor.PassportPrime =>
+				"The round budget, and a total fee budget derived from the fee-rate cap, are shown on the device and "
+				+ "enforced there; the fee-rate cap itself is enforced by Wasabi.",
 			_ => "",
 		};
 
@@ -202,11 +205,20 @@ public class HardwareWalletService : IDisposable
 		using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
 		using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
 
-		var detectedHardwareWallets = (await new HwiClient(_network).EnumerateAsync(timeoutCts.Token).ConfigureAwait(false)).ToArray();
+		var detected = (await new HwiClient(_network).EnumerateAsync(timeoutCts.Token).ConfigureAwait(false)).ToList();
 
 		cancellationToken.ThrowIfCancellationRequested();
 
-		return detectedHardwareWallets;
+		// Devices HWI cannot see are found over their vendor's own transport.
+		foreach (var backend in _backends.Values)
+		{
+			if (await backend.TryDetectAsync(timeoutCts.Token).ConfigureAwait(false) is { } ownDevice)
+			{
+				detected.Add(ownDevice);
+			}
+		}
+
+		return [.. detected];
 	}
 
 	/// <summary>Runs the device's initial setup, for a device that reports it has no seed yet.</summary>
