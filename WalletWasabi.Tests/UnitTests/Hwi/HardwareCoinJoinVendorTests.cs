@@ -25,6 +25,7 @@ public class HardwareCoinJoinVendorTests
 	[InlineData(HardwareWalletModels.Trezor_Safe_5, HardwareCoinJoinVendor.Trezor)]
 	[InlineData(HardwareWalletModels.Coldcard, HardwareCoinJoinVendor.Coldcard)]
 	[InlineData(HardwareWalletModels.Coldcard_Simulator, HardwareCoinJoinVendor.Coldcard)]
+	[InlineData(HardwareWalletModels.Foundation_Passport, HardwareCoinJoinVendor.PassportPrime)]
 	[InlineData(HardwareWalletModels.Ledger_Nano_X, HardwareCoinJoinVendor.None)]
 	[InlineData(HardwareWalletModels.Jade, HardwareCoinJoinVendor.None)]
 	[InlineData(HardwareWalletModels.Trezor_1, HardwareCoinJoinVendor.None)]
