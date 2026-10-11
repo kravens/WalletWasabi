@@ -42,18 +42,34 @@ public class HardwareCoinJoinVendorTests
 		// Written before the vendor was recorded: a SLIP-25 account means a Trezor, anything else no device.
 		Assert.Equal(HardwareCoinJoinVendor.Trezor, Reload(TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: true), Path.Combine(directory, "trezor.json"), "CoinJoinVendor").CoinJoinVendor);
 		Assert.Equal(HardwareCoinJoinVendor.None, Reload(TestKeyManagers.PolicySignerWallet(), Path.Combine(directory, "plain.json"), "CoinJoinVendor").CoinJoinVendor);
+
+		// Previews 1-4 wrote the Coldcard flag under its own name, a Trezor as None next to its SLIP-25 account, and the opt-out as a flag of its own.
+		Assert.Equal(HardwareCoinJoinVendor.Coldcard, Reload(TestKeyManagers.PolicySignerWallet(), Path.Combine(directory, "preview4-coldcard.json"), "CoinJoinVendor", ("IsColdcardCoinjoin", true)).CoinJoinVendor);
+		var preview4Trezor = TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: true);
+		preview4Trezor.CoinJoinVendor = HardwareCoinJoinVendor.None;
+		Assert.Equal(HardwareCoinJoinVendor.Trezor, Reload(preview4Trezor, Path.Combine(directory, "preview4-trezor.json"), null, ("CoinJoinDisabled", false)).CoinJoinVendor);
+		var optedOut = Reload(preview4Trezor, Path.Combine(directory, "optedout.json"), null, ("CoinJoinDisabled", true));
+		Assert.True(optedOut.HasCoinJoinAccount);
+		Assert.False(optedOut.IsCoinJoinSignedByDevice);
 	}
 
-	/// <summary>Round-trips a wallet through its file, optionally without one key, as an older version wrote it.</summary>
-	private static KeyManager Reload(KeyManager keyManager, string filePath, string? removeKey = null)
+	/// <summary>Round-trips a wallet through its file, with a key removed and others added as older versions wrote them.</summary>
+	private static KeyManager Reload(KeyManager keyManager, string filePath, string? removeKey = null, params (string Key, bool Value)[] addKeys)
 	{
 		keyManager.SetFilePath(filePath);
 		keyManager.ToFile();
 
-		if (removeKey is not null)
+		if (removeKey is not null || addKeys.Length > 0)
 		{
 			var json = JsonNode.Parse(File.ReadAllText(filePath))!.AsObject();
-			json.Remove(removeKey);
+			if (removeKey is not null)
+			{
+				json.Remove(removeKey);
+			}
+			foreach (var (key, value) in addKeys)
+			{
+				json[key] = value;
+			}
 			File.WriteAllText(filePath, json.ToJsonString());
 		}
 
