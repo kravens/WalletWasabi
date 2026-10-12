@@ -30,7 +30,8 @@ public enum CoinjoinError
 	CoordinatorLiedAboutInputs,
 	NotEnoughConfirmedUnprivateBalance,
 	DeviceAuthorizationFailed,
-	DeviceRefusedToSign
+	DeviceRefusedToSign,
+	DeviceNotFound
 }
 
 public class StatusChangedEventArgs : EventArgs

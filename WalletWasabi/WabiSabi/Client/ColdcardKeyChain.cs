@@ -46,8 +46,10 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	public ColdcardDevice Device => _device;
 
 	/// <summary>The device HSM policy has no round counter, so the user's round budget is enforced here:
-	/// once it is used up, no new round can be entered until the user authorizes again.</summary>
-	public bool NeedsAuthorization => Volatile.Read(ref _roundsSigned) >= _maxRounds;
+	/// once it is used up, no new round can be entered until the user authorizes again. An unplugged device
+	/// counts too: checked before every round, so the coinjoin stops and says so instead of failing round
+	/// after round with inputs it cannot prove.</summary>
+	public bool NeedsAuthorization => Volatile.Read(ref _roundsSigned) >= _maxRounds || !ColdcardUsb.IsConnected();
 
 	/// <summary>
 	/// The stricter of the policy's <c>max_fee_per_kvbyte</c> and the current setting, so rounds the device would

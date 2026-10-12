@@ -449,6 +449,7 @@ public partial class CoinJoinStateViewModel : ViewModelBase
 					CoinjoinError.CoordinatorLiedAboutInputs => CoordinatorLiedMessage,
 					CoinjoinError.DeviceAuthorizationFailed => DeviceAuthorizationFailedMessage,
 					CoinjoinError.DeviceRefusedToSign => DeviceRefusedToSignMessage,
+					CoinjoinError.DeviceNotFound => DeviceNotFoundMessage,
 					_ => GeneralErrorMessage
 				};
 

@@ -11,5 +11,8 @@ public static class ColdcardUsb
 	/// <summary>Opens the connected Coldcard. Throws if none is found.</summary>
 	public static IUsbHid Open() =>
 		UsbHid.TryOpen(VendorId, ProductId)
-		?? throw new InvalidOperationException("No Coldcard is connected. Connect (and Enable) USB on the device.");
+		?? throw new Wallets.HardwareWalletNotFoundException("No Coldcard is connected. Connect (and Enable) USB on the device.");
+
+	/// <summary>Whether a Coldcard is attached right now. Enumeration only: nothing is opened or sent, so it is safe while the device is busy signing.</summary>
+	public static bool IsConnected() => UsbHid.Enumerate(VendorId, ProductId).Count > 0;
 }

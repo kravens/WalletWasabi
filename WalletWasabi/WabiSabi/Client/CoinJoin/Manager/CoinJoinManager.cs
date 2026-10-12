@@ -252,7 +252,7 @@ public class CoinJoinManager : BackgroundService
 					{
 						_pendingAuthorizations.TryRemove(walletToStart.WalletId, out _);
 						Logger.LogWarning(FormatLog($"Coinjoin authorization failed: {ex.Message}", walletToStart));
-						NotifyCoinJoinStartError(walletToStart, CoinjoinError.DeviceAuthorizationFailed);
+						NotifyCoinJoinStartError(walletToStart, ex is HardwareWalletNotFoundException ? CoinjoinError.DeviceNotFound : CoinjoinError.DeviceAuthorizationFailed);
 					}
 				},
 				cancellationToken);
