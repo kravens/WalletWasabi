@@ -39,9 +39,9 @@ internal class ColdcardBackend : IHardwareWalletBackend
 	{
 		if (existingKeyChain is ColdcardKeyChain existing)
 		{
-			// Reuse the HSM session only when the device is still reachable and the user's round budget
-			// is not used up; otherwise rebuild it, which renews the budget with this fresh authorization.
-			if (!existing.NeedsAuthorization && IsDeviceAlive(existing))
+			// Reuse the HSM session only when the device still answers and the user's round budget is not
+			// used up; otherwise rebuild it, which renews the budget with this fresh authorization.
+			if (!existing.NeedsAuthorization)
 			{
 				return existing;
 			}
@@ -176,20 +176,6 @@ internal class ColdcardBackend : IHardwareWalletBackend
 		}
 
 		return device;
-	}
-
-	/// <summary>A device that has been unplugged answers nothing; its session cannot be reused.</summary>
-	private static bool IsDeviceAlive(ColdcardKeyChain keyChain)
-	{
-		try
-		{
-			keyChain.Device.GetVersion();
-			return true;
-		}
-		catch
-		{
-			return false;
-		}
 	}
 
 	public void Dispose()

@@ -546,6 +546,7 @@ public class CoinJoinManager : BackgroundService
 		var batchedPayments = wallet.BatchedPayments;
 		CoinJoinClientException? cjClientException = null;
 		bool deviceRefused = false;
+		bool deviceLost = false;
 		var forceStop = false;
 		try
 		{
@@ -597,6 +598,12 @@ public class CoinJoinManager : BackgroundService
 		catch (InvalidOperationException ioe)
 		{
 			Logger.LogWarning(ioe);
+		}
+		catch (HardwareWalletNotFoundException e)
+		{
+			// The device went away mid-round. Nothing to retry until it is back, so stop and say so.
+			Logger.LogWarning(FormatLog($"The device could not be reached: {e.Message}", wallet));
+			deviceLost = true;
 		}
 		catch (HardwareWalletException e) when (wallet.KeyChain is not { NeedsAuthorization: true })
 		{
@@ -661,6 +668,11 @@ public class CoinJoinManager : BackgroundService
 		else if (deviceRefused)
 		{
 			NotifyCoinJoinStartError(wallet, CoinjoinError.DeviceRefusedToSign);
+			NotifyWalletStoppedCoinJoin(wallet);
+		}
+		else if (deviceLost)
+		{
+			NotifyCoinJoinStartError(wallet, CoinjoinError.DeviceNotFound);
 			NotifyWalletStoppedCoinJoin(wallet);
 		}
 		else if (wallet.IsWalletPrivate() && !wallet.BatchedPayments.AreTherePendingPayments)

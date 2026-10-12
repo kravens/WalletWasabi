@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using NBitcoin;
@@ -8,6 +9,7 @@ using WalletWasabi.Extensions;
 using WalletWasabi.Hwi.Coldcard;
 using WalletWasabi.Logging;
 using WalletWasabi.WabiSabi.Models.MultipartyTransaction;
+using WalletWasabi.Wallets;
 
 namespace WalletWasabi.WabiSabi.Client;
 
@@ -46,10 +48,34 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	public ColdcardDevice Device => _device;
 
 	/// <summary>The device HSM policy has no round counter, so the user's round budget is enforced here:
-	/// once it is used up, no new round can be entered until the user authorizes again. An unplugged device
-	/// counts too: checked before every round, so the coinjoin stops and says so instead of failing round
-	/// after round with inputs it cannot prove.</summary>
-	public bool NeedsAuthorization => Volatile.Read(ref _roundsSigned) >= _maxRounds || !ColdcardUsb.IsConnected();
+	/// once it is used up, no new round can be entered until the user authorizes again.</summary>
+	private bool BudgetSpent => Volatile.Read(ref _roundsSigned) >= _maxRounds;
+
+	/// <summary>
+	/// The budget, and whether the device still answers. The manager asks this before every round, so an
+	/// unplugged Coldcard stops the coinjoin there instead of failing round after round with inputs it cannot
+	/// prove. A round trip, not a USB enumeration: a device with no readable serial would enumerate as absent,
+	/// and a device plugged back in answers on the reconnected session with no new approval.
+	/// </summary>
+	public bool NeedsAuthorization => BudgetSpent || !IsDeviceAlive();
+
+	private bool IsDeviceAlive()
+	{
+		try
+		{
+			_device.GetVersion();
+			return true;
+		}
+		catch (Exception e)
+		{
+			Logger.LogDebug($"The Coldcard did not answer: {e.Message}");
+			return false;
+		}
+	}
+
+	/// <summary>An unplugged device fails at the HID layer; name it as the device going away, which is what the manager stops on.</summary>
+	private static HardwareWalletNotFoundException Unreachable(IOException e) =>
+		new($"The Coldcard stopped answering; check that it is connected. {e.Message}", e);
 
 	/// <summary>
 	/// The stricter of the policy's <c>max_fee_per_kvbyte</c> and the current setting, so rounds the device would
@@ -75,7 +101,7 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 
 	public OwnershipProof GetOwnershipProof(IDestination destination, CoinJoinInputCommitmentData commitmentData)
 	{
-		if (NeedsAuthorization)
+		if (BudgetSpent)
 		{
 			throw new ColdcardException(
 				$"The authorized {_maxRounds} coinjoin rounds are used up. Authorize the Coldcard again to continue.");
@@ -92,8 +118,14 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 				? ScriptPubKeyType.Segwit
 				: throw new NotSupportedException($"A Coldcard cannot prove ownership of '{scriptPubKey}'.");
 
-		var proofBytes = _device.SignOwnershipProof(keyPath, scriptType, commitmentData.ToBytes());
-		return OwnershipProof.FromBytes(proofBytes);
+		try
+		{
+			return OwnershipProof.FromBytes(_device.SignOwnershipProof(keyPath, scriptType, commitmentData.ToBytes()));
+		}
+		catch (IOException e)
+		{
+			throw Unreachable(e);
+		}
 	}
 
 	/// <summary>
@@ -113,7 +145,15 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 		// Timed and logged: the coordinator's signing phase, not this budget, is the real deadline.
 		var psbtBytes = psbt.ToBytes();
 		var started = DateTimeOffset.UtcNow;
-		var signedBytes = _device.SignPsbt(psbtBytes, timeout.Token);
+		byte[] signedBytes;
+		try
+		{
+			signedBytes = _device.SignPsbt(psbtBytes, timeout.Token);
+		}
+		catch (IOException e)
+		{
+			throw Unreachable(e);
+		}
 		var elapsed = (DateTimeOffset.UtcNow - started).TotalSeconds;
 		var signedPsbt = PSBT.Load(signedBytes, network);
 
