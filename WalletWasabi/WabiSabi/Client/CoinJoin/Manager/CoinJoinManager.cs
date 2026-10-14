@@ -252,7 +252,7 @@ public class CoinJoinManager : BackgroundService
 					{
 						_pendingAuthorizations.TryRemove(walletToStart.WalletId, out _);
 						Logger.LogWarning(FormatLog($"Coinjoin authorization failed: {ex.Message}", walletToStart));
-						NotifyCoinJoinStartError(walletToStart, ex is HardwareWalletNotFoundException ? CoinjoinError.DeviceNotFound : CoinjoinError.DeviceAuthorizationFailed);
+						NotifyWalletStoppedCoinJoin(walletToStart, ex is HardwareWalletNotFoundException ? CoinjoinError.DeviceNotFound : CoinjoinError.DeviceAuthorizationFailed);
 					}
 				},
 				cancellationToken);
@@ -667,13 +667,11 @@ public class CoinJoinManager : BackgroundService
 		}
 		else if (deviceRefused)
 		{
-			NotifyCoinJoinStartError(wallet, CoinjoinError.DeviceRefusedToSign);
-			NotifyWalletStoppedCoinJoin(wallet);
+			NotifyWalletStoppedCoinJoin(wallet, CoinjoinError.DeviceRefusedToSign);
 		}
 		else if (deviceLost)
 		{
-			NotifyCoinJoinStartError(wallet, CoinjoinError.DeviceNotFound);
-			NotifyWalletStoppedCoinJoin(wallet);
+			NotifyWalletStoppedCoinJoin(wallet, CoinjoinError.DeviceNotFound);
 		}
 		else if (wallet.IsWalletPrivate() && !wallet.BatchedPayments.AreTherePendingPayments)
 		{
@@ -728,6 +726,17 @@ public class CoinJoinManager : BackgroundService
 
 	private void NotifyWalletStoppedCoinJoin(Wallet openedWallet) =>
 	StatusChanged.SafeInvoke(this, new WalletStoppedCoinJoinEventArgs(openedWallet));
+
+	/// <summary>
+	/// A stop the device caused. Stopped first, then the reason: a front end resets its text on entering the
+	/// stopped state, so the reason has to come last to stay on screen, and nothing running must not keep showing
+	/// a stop button.
+	/// </summary>
+	private void NotifyWalletStoppedCoinJoin(Wallet openedWallet, CoinjoinError reason)
+	{
+		NotifyWalletStoppedCoinJoin(openedWallet);
+		NotifyCoinJoinStartError(openedWallet, reason);
+	}
 
 	private void NotifyCoinJoinStarted(Wallet openedWallet, TimeSpan registrationTimeout) =>
 		StatusChanged.SafeInvoke(this, new StartedEventArgs(openedWallet, registrationTimeout));
