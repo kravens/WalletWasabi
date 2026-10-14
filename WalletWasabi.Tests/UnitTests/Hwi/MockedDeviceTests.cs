@@ -729,6 +729,19 @@ public class MockedDeviceTests
 		Assert.Equal(expectedAddress2, address2);
 	}
 
+	[Theory]
+	[InlineData("coldcard_edge")] // HWI 3.2 names a Coldcard on Edge firmware so; no such model is listed here.
+	[InlineData(null)] // HWI omits "model" while a device is mid-interaction.
+	public void UnknownOrMissingModelFallsBackToType(string? model)
+	{
+		var modelField = model is null ? "" : $"\"model\": \"{model}\", ";
+		var entry = Assert.Single(HwiParser.ParseHwiEnumerateResponse(
+			$$"""[{"type": "coldcard", {{modelField}}"path": "3-5:1.3", "fingerprint": "a3d0d797"}]"""));
+
+		Assert.Equal(HardwareWalletModels.Coldcard, entry.Model);
+		Assert.Equal("a3d0d797", entry.Fingerprint.ToString());
+	}
+
 	#endregion Tests
 
 	#region HelperMethods
