@@ -226,10 +226,6 @@ public static class HwiParser
 
 	private static HwiEnumerateEntry ParseHwiEnumerateEntry(JsonNode json)
 	{
-        // HWI omits "model" while a device is mid-interaction (e.g. a Trezor awaiting its passphrase);
-        // fall back to "type" or Unknown instead of failing the whole enumeration.
-        var modelToken = json["model"] ?? json["type"];
-
         var pathString = json["path"]?.GetValue<string>()?.Trim()
             ?? throw new ArgumentNullException($"Path can't be null;");
 
@@ -271,10 +267,12 @@ public static class HwiParser
 			errorString = err.Message;
 		}
 
-		HardwareWalletModels model = HardwareWalletModels.Unknown;
-		if (modelToken is not null && TryParseHardwareWalletVendor(modelToken, out HardwareWalletModels t))
+		// "model" refines "type", and HWI adds refinements this enum has not heard of (a Coldcard on Edge
+		// firmware is "coldcard_edge") or omits "model" while a device is mid-interaction. Fall back to the
+		// type, which is also what --device-type takes.
+		if (!TryParseHardwareWalletVendor(json["model"], out HardwareWalletModels model))
 		{
-			model = t;
+			TryParseHardwareWalletVendor(json["type"], out model);
 		}
 
 		return new HwiEnumerateEntry(
