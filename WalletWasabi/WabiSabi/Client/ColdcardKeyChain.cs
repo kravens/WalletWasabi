@@ -52,19 +52,26 @@ public class ColdcardKeyChain : IKeyChain, IDisposable
 	private bool BudgetSpent => Volatile.Read(ref _roundsSigned) >= _maxRounds;
 
 	/// <summary>
-	/// The budget, and whether the device still answers. The manager asks this before every round, so an
-	/// unplugged Coldcard stops the coinjoin there instead of failing round after round with inputs it cannot
-	/// prove. A round trip, not a USB enumeration: a device with no readable serial would enumerate as absent,
-	/// and a device plugged back in answers on the reconnected session with no new approval.
+	/// The budget, and whether the device still runs its policy. The manager asks this before every round, so
+	/// an unplugged Coldcard stops the coinjoin there instead of failing round after round with inputs it
+	/// cannot prove. A round trip, not a USB enumeration: a device with no readable serial would enumerate as
+	/// absent. The HSM status rather than a version call, because a Coldcard draws its power from USB: plugged
+	/// back in it has rebooted, the reconnected session answers, and the policy is only running again if the
+	/// user approved it at login; otherwise the device has to be asked again.
 	/// </summary>
-	public bool NeedsAuthorization => BudgetSpent || !IsDeviceAlive();
+	public bool NeedsAuthorization => BudgetSpent || !IsPolicyRunning();
 
-	private bool IsDeviceAlive()
+	private bool IsPolicyRunning()
 	{
 		try
 		{
-			_device.GetVersion();
-			return true;
+			if (_device.GetHsmStatus().Active)
+			{
+				return true;
+			}
+
+			Logger.LogInfo("The Coldcard is not in HSM mode; the coinjoin policy has to be approved on it again.");
+			return false;
 		}
 		catch (Exception e)
 		{
