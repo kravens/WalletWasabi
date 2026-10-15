@@ -52,5 +52,6 @@
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <!-- Scheme. -->
     <PackageVersion Include="NScheme" Version="0.0.1" />
+    <PackageVersion Include="Payjoin" Version="0.2.0" />
   </ItemGroup>
 </Project>
