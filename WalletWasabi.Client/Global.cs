@@ -28,6 +28,7 @@ using WalletWasabi.Helpers;
 using WalletWasabi.Io;
 using WalletWasabi.Logging;
 using WalletWasabi.Models;
+using WalletWasabi.Payjoin;
 using WalletWasabi.Rpc;
 using WalletWasabi.Services;
 using WalletWasabi.Services.NodesManagement;
@@ -89,7 +90,11 @@ public class Global
 		FilterStore = new FilterStore(Path.Combine(networkWorkFolderPath, "IndexStore"), Network, FilterHeaders, EventBus);
 		FilterStore.DisposeUsing(_disposables);
 
-		ExternalSourcesHttpClientFactory = BuildHttpClientFactory();
+		var externalSourcesHttpClientFactory = BuildHttpClientFactory();
+
+		// Payjoin sends and key fetches each get their own client for their own circuit; they are over within a minute, so the handler must not stay around for six hours.
+		externalSourcesHttpClientFactory.AddLifetimeResolver(name => name.StartsWith("payjoin-oneshot-") ? DateTime.UtcNow.AddMinutes(10) : DateTime.MaxValue);
+		ExternalSourcesHttpClientFactory = externalSourcesHttpClientFactory;
 
 		var p2PDataDir = GetBitcoinP2PNetworkDirectory();
 		_blockHeaders = ConfigureBlockHeaderChain(p2PDataDir);
@@ -115,6 +120,20 @@ public class Global
 
 		var broadcasters = CreateBroadcasters(p2PNodeListProvider: () => _p2pConnectionManager.Nodes, _mempoolService);
 		TransactionBroadcaster = new TransactionBroadcaster(broadcasters.ToArray(), _mempoolService);
+
+		try
+		{
+			var payjoinConfiguration = PayjoinConfiguration.Create(Config.PayjoinDirectoryUri, Config.PayjoinOhttpRelays, Config.MaxCoinjoinMiningFeeRate, Config.UseTor != TorMode.Disabled);
+			PayjoinConfiguration = payjoinConfiguration;
+			HostedServices.Register<PayjoinReceiverManager>(
+				() => new PayjoinReceiverManager(Path.Combine(networkWorkFolderPath, "Payjoin"), Network, payjoinConfiguration, WalletManager.GetWalletsAsync, ExternalSourcesHttpClientFactory, TransactionBroadcaster, TransactionStore, _bitcoinRpcClient, EventBus),
+				"Payjoin Receiver");
+		}
+		catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+		{
+			// A bad payjoin setting or an unusable payjoin folder must not keep the wallet from starting.
+			Logger.LogError($"Payjoin is disabled: {ex.Message}");
+		}
 
 		Scheme = new Scheme(this);
 
@@ -145,6 +164,7 @@ public class Global
 	public FilterStore FilterStore { get; }
 	public AllTransactionStore TransactionStore { get; }
 	public IHttpClientFactory ExternalSourcesHttpClientFactory { get; }
+	public PayjoinConfiguration? PayjoinConfiguration { get; }
 	public Config Config { get; }
 	public WalletManager WalletManager { get; }
 	public TransactionBroadcaster TransactionBroadcaster { get; }

@@ -14,6 +14,7 @@ using WalletWasabi.Blockchain.Transactions;
 using WalletWasabi.Extensions;
 using WalletWasabi.Helpers;
 using WalletWasabi.Models;
+using WalletWasabi.Payjoin;
 using WalletWasabi.Rpc;
 using WalletWasabi.WabiSabi.Client.Batching;
 using WalletWasabi.WabiSabi.Client.CoinJoin.Client;
@@ -372,6 +373,143 @@ public class WasabiJsonRpcService : IJsonRpcService
 		};
 	}
 
+	/// <summary>How long a send waits for the receiver's payjoin proposal before the plain payment goes out.</summary>
+	private static readonly TimeSpan PayjoinSendTimeout = TimeSpan.FromSeconds(60);
+
+	[JsonRpcMethod("payjoinreceive")]
+	public async Task<JsonRpcResult> StartPayjoinReceiveAsync(string label, Money? amount = null, string? password = null, bool taproot = true)
+	{
+		AssertWalletIsLoaded();
+		label = Guard.NotNullOrEmptyOrWhitespace(nameof(label), label, true);
+		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
+
+		// Our contribution is signed in the background once the sender shows up.
+		AssertWalletIsLoggedIn(activeWallet, password ?? "");
+
+		var labels = new LabelsArray(label);
+		var session = await GetPayjoinReceiverManager().StartSessionAsync(
+			activeWallet,
+			() => taproot ? activeWallet.KeyManager.GetNextReceiveKey(labels, ScriptPubKeyType.TaprootBIP86) : activeWallet.KeyManager.GetNextReceiveKey(labels),
+			amount,
+			CancellationToken.None).ConfigureAwait(false);
+
+		return new JsonRpcResult
+		{
+			["sessionId"] = session.Id,
+			["address"] = session.Address,
+			["uri"] = session.PjUri
+		};
+	}
+
+	[JsonRpcMethod("listpayjoins")]
+	public JsonRpcResultList ListPayjoins()
+	{
+		AssertWalletIsLoaded();
+		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
+
+		return GetPayjoinReceiverManager().Store.GetAll()
+			.Where(x => x.WalletName == activeWallet.WalletName)
+			.Select(x => new JsonRpcResult
+			{
+				["sessionId"] = x.Id,
+				["address"] = x.Address,
+				["uri"] = x.PjUri,
+				["closed"] = x.IsClosed,
+				["cancelRequested"] = x.CancelRequested,
+				["txid"] = x.ProposalTxid?.ToString(),
+				["error"] = x.Error
+			})
+			.ToImmutableArray();
+	}
+
+	[JsonRpcMethod("cancelpayjoin")]
+	public void CancelPayjoin(string sessionId)
+	{
+		AssertWalletIsLoaded();
+		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
+		GetPayjoinReceiverManager().RequestCancel(Guard.NotNullOrEmptyOrWhitespace(nameof(sessionId), sessionId, true), activeWallet.WalletName);
+	}
+
+	[JsonRpcMethod("payjoinsend")]
+	public async Task<JsonRpcResult> SendPayjoinAsync(string uri, OutPoint[] coins, int? feeTarget = null, int? feeRate = null, string? password = null, Money? amount = null, string label = "")
+	{
+		Guard.NotNull(nameof(coins), coins);
+		password = Guard.Correct(password);
+		AssertWalletIsLoaded();
+		var activeWallet = Guard.NotNull(nameof(ActiveWallet), ActiveWallet);
+
+		if (activeWallet.KeyManager.IsWatchOnly)
+		{
+			throw new InvalidOperationException("Sending a payjoin needs a wallet that can sign.");
+		}
+
+		// The receiver's proposal is signed with the wallet's password after this call built the original.
+		AssertWalletIsLoggedIn(activeWallet, password);
+		var configuration = Global.PayjoinConfiguration ?? throw new InvalidOperationException(PayjoinDisabledMessage);
+
+		using var parsedUri = global::Payjoin.Uri.Parse(uri);
+		using var pjUri = parsedUri.CheckPjSupported();
+		Money? uriAmount = pjUri.AmountSats() is { } sats ? Money.Satoshis((long)sats) : null;
+		if (amount is { } && uriAmount is { } && amount != uriAmount)
+		{
+			throw new ArgumentException("The amount differs from the amount in the URI.", nameof(amount));
+		}
+		Money amountToSend = amount ?? uriAmount ?? throw new ArgumentException("The URI carries no amount, pass one.", nameof(amount));
+		var destination = BitcoinAddress.Create(pjUri.Address(), Global.Network);
+
+		var payment = new PaymentIntent(destination.ScriptPubKey, amountToSend, label: new LabelsArray(label));
+		var feeStrategy = GetFeeStrategy(feeTarget, feeRate);
+		FeeRate originalFeeRate = feeStrategy.TryGetTarget(out int? target)
+			? activeWallet.FeeRateEstimations?.GetFeeRate(target.Value) ?? throw new InvalidOperationException("Cannot get fee estimations.")
+			: feeStrategy.TryGetFeeRate(out FeeRate? explicitFeeRate) ? explicitFeeRate : throw new NotSupportedException(feeStrategy.Type.ToString());
+
+		// The signed inputs must stay out of coinjoin and other spends while the receiver is working on them.
+		var original = GetPayjoinReceiverManager().BuildReserved(() => PayjoinSender.BuildOriginal(activeWallet, activeWallet.Password, payment, originalFeeRate, coins));
+		var spentCoins = original.SpentCoins.ToArray();
+
+		PayjoinSendResult result;
+		try
+		{
+			result = await PayjoinSender.SendAsync(uri, original, Global.Network, activeWallet.KeyManager, activeWallet.Password, configuration, Global.ExternalSourcesHttpClientFactory, PayjoinSendTimeout, CancellationToken.None).ConfigureAwait(false);
+		}
+		catch
+		{
+			foreach (var coin in spentCoins)
+			{
+				coin.PayjoinInProgress = false;
+			}
+
+			throw;
+		}
+
+		string? broadcastError = null;
+		try
+		{
+			await Global.TransactionBroadcaster.SendTransactionAsync(result.Transaction).ConfigureAwait(false);
+		}
+		catch (Exception ex)
+		{
+			// The caller gets the signed transaction back to broadcast later; the receiver may also broadcast the original from its mailbox.
+			broadcastError = ex.Message;
+		}
+		finally
+		{
+			foreach (var coin in spentCoins)
+			{
+				coin.PayjoinInProgress = false;
+			}
+		}
+
+		return new JsonRpcResult
+		{
+			["txid"] = result.Transaction.GetHash(),
+			["tx"] = result.Transaction.Transaction.ToHex(),
+			["payjoin"] = result.IsPayjoin,
+			["fallbackReason"] = result.FallbackReason,
+			["broadcastError"] = broadcastError
+		};
+	}
+
 	[JsonRpcMethod("canceltransaction")]
 	public string BuildCancelTransaction(uint256 txId, string password = "")
 	{
@@ -572,6 +710,11 @@ public class WasabiJsonRpcService : IJsonRpcService
 		throw new InvalidOperationException("This RPC method is special and the handling method should not be called.");
 	}
 
+	private const string PayjoinDisabledMessage = "Payjoin is disabled, check the PayjoinDirectoryUri and PayjoinOhttpRelays settings.";
+
+	private PayjoinReceiverManager GetPayjoinReceiverManager() =>
+		Global.HostedServices.GetOrDefault<PayjoinReceiverManager>() ?? throw new InvalidOperationException(PayjoinDisabledMessage);
+
 	private CoinJoinManager GetCoinJoinManager()
 	{
 		var coinJoinManager = Global.HostedServices.GetOrDefault<CoinJoinManager>()
@@ -625,7 +768,7 @@ public class WasabiJsonRpcService : IJsonRpcService
 	{
 		if (!activeWallet.IsLoggedIn && !activeWallet.TryLogin(password, out _))
 		{
-			throw new Exception($"'{activeWallet.WalletName}' wallet requires the passphrase to start coinjoining.");
+			throw new Exception($"'{activeWallet.WalletName}' wallet requires the passphrase.");
 		}
 	}
 
