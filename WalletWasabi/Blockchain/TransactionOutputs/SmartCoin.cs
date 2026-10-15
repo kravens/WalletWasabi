@@ -70,6 +70,13 @@ public class SmartCoin : NotifyPropertyChangedBase, IEquatable<SmartCoin>, IDest
 		set => RaiseAndSetIfChanged(ref field, value);
 	}
 
+	/// <summary>Reserved as our contribution to a payjoin that is still being negotiated.</summary>
+	public bool PayjoinInProgress
+	{
+		get;
+		set => RaiseAndSetIfChanged(ref field, value);
+	}
+
 	public DateTimeOffset? BannedUntilUtc
 	{
 		get;
@@ -96,9 +103,9 @@ public class SmartCoin : NotifyPropertyChangedBase, IEquatable<SmartCoin>, IDest
 	public bool IsSpent() => SpenderTransaction is not null;
 
 	/// <summary>
-	/// IsUnspent() AND !CoinJoinInProgress
+	/// IsUnspent() AND !CoinJoinInProgress AND !PayjoinInProgress
 	/// </summary>
-	public bool IsAvailable() => SpenderTransaction is null && !CoinJoinInProgress;
+	public bool IsAvailable() => SpenderTransaction is null && !CoinJoinInProgress && !PayjoinInProgress;
 
 	public override string ToString() => $"{TransactionId.ToString()[..7]}.. - {Index}, {ScriptPubKey.ToString()[..7]}.. - {Amount} BTC";
 

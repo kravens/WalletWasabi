@@ -43,8 +43,8 @@ public class TransactionFactory
 			throw new InvalidOperationException("Silent payments requires a hot wallet.");
 		}
 
-		// Get allowed coins to spend.
-		var availableCoinsView = Coins.Unspent();
+		// Get allowed coins to spend. A coin reserved for a pending payjoin is already signed into a proposal.
+		ICoinsView availableCoinsView = new CoinsView(Coins.Unspent().Where(x => !x.PayjoinInProgress));
 		if (parameters.AllowDoubleSpend && parameters.AllowedInputs is not null)
 		{
 			var doubleSpends = new List<SmartCoin>();

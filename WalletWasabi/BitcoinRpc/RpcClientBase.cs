@@ -136,6 +136,11 @@ public class RpcClientBase : IRPCClient
 		return await RpcClient.SendRawTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
 	}
 
+	public virtual async Task<MempoolAcceptResult> TestMempoolAcceptAsync(Transaction transaction, CancellationToken cancellationToken = default)
+	{
+		return await RpcClient.TestMempoolAcceptAsync(transaction, cancellationToken).ConfigureAwait(false);
+	}
+
 	public virtual async Task<EstimateSmartFeeResponse> EstimateSmartFeeAsync(int confirmationTarget, EstimateSmartFeeMode estimateMode = EstimateSmartFeeMode.Conservative, CancellationToken cancellationToken = default)
 	{
 		return await RpcClient.EstimateSmartFeeAsync(confirmationTarget, estimateMode, cancellationToken).ConfigureAwait(false);

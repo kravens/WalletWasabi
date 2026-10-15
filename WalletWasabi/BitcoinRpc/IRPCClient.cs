@@ -26,6 +26,7 @@ public interface IRPCClient
 	Task<TimeSpan> UptimeAsync(CancellationToken cancellationToken = default);
 
 	Task<uint256> SendRawTransactionAsync(Transaction transaction, CancellationToken cancellationToken = default);
+	Task<MempoolAcceptResult> TestMempoolAcceptAsync(Transaction transaction, CancellationToken cancellationToken = default);
 
 	Task<MempoolEntry> GetMempoolEntryAsync(uint256 txid, bool throwIfNotFound = true, CancellationToken cancellationToken = default);
 

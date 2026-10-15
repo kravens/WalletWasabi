@@ -18,6 +18,7 @@ public class MockRpcClient : IRPCClient
 	public Func<uint256, Task<GetBlockRPCResponse>>? OnGetVerboseBlockAsync { get; set; }
 	public Func<uint256, Task<BlockFilter>>? OnGetBlockFilterAsync { get; set; }
 	public Func<Transaction, uint256>? OnSendRawTransactionAsync { get; set; }
+	public Func<Transaction, MempoolAcceptResult>? OnTestMempoolAcceptAsync { get; set; }
 	public Func<Task<MemPoolInfo>>? OnGetMempoolInfoAsync { get; set; }
 	public Func<Task<uint256[]>>? OnGetRawMempoolAsync { get; set; }
 	public Func<uint256, bool, Task<Transaction>>? OnGetRawTransactionAsync { get; set; }
@@ -150,6 +151,15 @@ public class MockRpcClient : IRPCClient
 		{
 			{ } fn => Task.FromResult(fn(transaction)),
 			null => Task.FromException<uint256>(new InvalidOperationException($"{nameof(OnSendRawTransactionAsync)} was invoked but never assigned."))
+		};
+	}
+
+	public Task<MempoolAcceptResult> TestMempoolAcceptAsync(Transaction transaction, CancellationToken cancellationToken = default)
+	{
+		return OnTestMempoolAcceptAsync switch
+		{
+			{ } fn => Task.FromResult(fn(transaction)),
+			null => Task.FromException<MempoolAcceptResult>(new InvalidOperationException($"{nameof(OnTestMempoolAcceptAsync)} was invoked but never assigned."))
 		};
 	}
 
