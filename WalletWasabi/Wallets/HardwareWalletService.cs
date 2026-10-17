@@ -326,11 +326,38 @@ public class HardwareWalletService : IDisposable
 		{
 			throw new InvalidOperationException("Only a hardware wallet without a taproot account or a coinjoin signer can have a coinjoin account added.");
 		}
-		AssertNoCoinJoinOnDevice();
+		var detected = await DetectAsync(cancellationToken).ConfigureAwait(false);
+		await EnableCoinJoinAsync(keyManager, detected, addressToConfirm, cancellationToken).ConfigureAwait(false);
+	}
 
-		// Only a Trezor can be enabled after the fact, by adding the account; every other vendor is decided at import.
-		using var timeout = ConfirmationTimeout(cancellationToken);
-		await _trezor.EnableCoinJoinAsync(keyManager, addressToConfirm, timeout.Token).ConfigureAwait(false);
+	/// <summary>Enables coinjoin the way the connected device of this wallet, picked from <paramref name="detected"/> by fingerprint, signs them.</summary>
+	internal async Task EnableCoinJoinAsync(KeyManager keyManager, IEnumerable<HwiEnumerateEntry> detected, IProgress<BitcoinAddress>? addressToConfirm, CancellationToken cancellationToken)
+	{
+		var device = detected.FirstOrDefault(device => device.Fingerprint == keyManager.MasterFingerprint)
+			?? throw new HardwareWalletNotFoundException("The device of this wallet is not connected. Connect and unlock it, then try again.");
+
+		switch (device.Model.VendorOf())
+		{
+			case HardwareCoinJoinVendor.Trezor:
+				using (var timeout = ConfirmationTimeout(cancellationToken))
+				{
+					await _trezor.EnableCoinJoinAsync(keyManager, addressToConfirm, timeout.Token).ConfigureAwait(false);
+				}
+				break;
+
+			case HardwareCoinJoinVendor.Coldcard:
+				// Signs from the wallet's own segwit account under an HSM policy it approves at the first coinjoin; there is no account to add.
+				keyManager.CoinJoinVendor = HardwareCoinJoinVendor.Coldcard;
+				keyManager.ToFile();
+				break;
+
+			case HardwareCoinJoinVendor.None:
+				throw new HardwareWalletException("This device cannot sign coinjoins.");
+
+			default:
+				// Passport and Krux read their own accounts at import.
+				throw new HardwareWalletException("Coinjoin for this device is set up at import. Import the wallet again with coinjoin on.");
+		}
 	}
 
 	/// <summary>Whether this wallet can add a taproot account later: a Coldcard is imported with segwit only, and signs taproot only on Edge firmware.</summary>
