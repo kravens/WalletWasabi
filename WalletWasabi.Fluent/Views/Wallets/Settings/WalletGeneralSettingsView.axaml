@@ -68,11 +68,11 @@
       </ComboBox>
     </DockPanel>
 
-    <DockPanel IsVisible="{Binding CanEnableCoinjoin}" ToolTip.Tip="Adds a coinjoin account to this hardware wallet so it can take part in coinjoins. Confirm on the device; the wallet restarts afterwards.">
+    <DockPanel IsVisible="{Binding CanEnableCoinjoin}" ToolTip.Tip="Adds a coinjoin account to this hardware wallet so it can take part in coinjoins. Confirm on the device; Wasabi needs a restart afterwards.">
       <TextBlock Text="Coinjoin" />
       <Button Content="Enable coinjoin" Command="{Binding EnableCoinjoinCommand}" HorizontalAlignment="Right" />
     </DockPanel>
-    <DockPanel IsVisible="{Binding CanEnableTaproot}" ToolTip.Tip="Adds taproot receive addresses, so taproot coins can be received and coinjoined. Requires Coldcard Edge firmware (coinjoin-fw-2). Do this while the Coldcard is not running its coinjoin policy; it approves a new policy at the next coinjoin, and the wallet restarts afterwards.">
+    <DockPanel IsVisible="{Binding CanEnableTaproot}" ToolTip.Tip="Adds taproot receive addresses, so taproot coins can be received and coinjoined. Requires Coldcard Edge firmware (coinjoin-fw-2). Do this while the Coldcard is not running its coinjoin policy; it approves a new policy at the next coinjoin, and Wasabi needs a restart afterwards.">
       <TextBlock Text="Taproot" />
       <Button Content="Enable taproot" Command="{Binding EnableTaprootCommand}" HorizontalAlignment="Right" />
     </DockPanel>
@@ -80,6 +80,13 @@
       <TextBlock Text="Check that the device shows this address:" TextWrapping="Wrap" />
       <TextBlock Text="{Binding AddressToConfirm}" TextWrapping="Wrap" />
     </StackPanel>
+    <DockPanel IsVisible="{Binding IsRestartPending}">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10">
+        <Button Content="Later" Command="{Binding RestartLaterCommand}" />
+        <Button Content="Restart now" Command="{Binding RestartNowCommand}" />
+      </StackPanel>
+      <TextBlock Text="Saved. Restart Wasabi to apply it." TextWrapping="Wrap" VerticalAlignment="Center" />
+    </DockPanel>
   </StackPanel>
 
 </UserControl>
