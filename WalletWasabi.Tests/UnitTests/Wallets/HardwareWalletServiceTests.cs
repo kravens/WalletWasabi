@@ -73,6 +73,28 @@ public class HardwareWalletServiceTests
 		Assert.Contains("Mixer", exception.Message);
 	}
 
+	/// <summary>A Coldcard imported without coinjoin is enabled by recording its vendor; the Trezor bridge must not be asked for it.</summary>
+	[Fact]
+	public async Task EnablingCoinJoinFollowsTheConnectedDeviceAsync()
+	{
+		using var service = new HardwareWalletService(Network.Main);
+		var keyManager = TestKeyManagers.WatchOnlyHardwareWallet(withCoinJoinAccount: false);
+		keyManager.SetFilePath(Path.Combine(await Common.GetEmptyWorkDirAsync(), "coldcard.json"));
+		HwiEnumerateEntry Device(HardwareWalletModels model, HDFingerprint? fingerprint) => new(model, "/dev/hidraw0", null, fingerprint, false, false, null, null);
+
+		// Another device, or none, is not this wallet's.
+		await Assert.ThrowsAsync<HardwareWalletNotFoundException>(() => service.EnableCoinJoinAsync(keyManager, [Device(HardwareWalletModels.Coldcard, new HDFingerprint(1))], null, CancellationToken.None));
+		await Assert.ThrowsAsync<HardwareWalletException>(() => service.EnableCoinJoinAsync(keyManager, [Device(HardwareWalletModels.Ledger_Nano_X, keyManager.MasterFingerprint)], null, CancellationToken.None));
+		await Assert.ThrowsAsync<HardwareWalletException>(() => service.EnableCoinJoinAsync(keyManager, [Device(HardwareWalletModels.Krux, keyManager.MasterFingerprint)], null, CancellationToken.None));
+		Assert.Equal(HardwareCoinJoinVendor.None, keyManager.CoinJoinVendor);
+
+		await service.EnableCoinJoinAsync(keyManager, [Device(HardwareWalletModels.Coldcard, keyManager.MasterFingerprint)], null, CancellationToken.None);
+
+		Assert.Equal(HardwareCoinJoinVendor.Coldcard, keyManager.CoinJoinVendor);
+		Assert.False(keyManager.HasCoinJoinAccount);
+		Assert.Equal(HardwareCoinJoinVendor.Coldcard, KeyManager.FromFile(keyManager.FilePath!).CoinJoinVendor);
+	}
+
 	[Fact]
 	public void AddingTheCoinJoinAccountRescansFromTheWalletBirth()
 	{
