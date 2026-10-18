@@ -1,4 +1,5 @@
 using ReactiveUI;
+using WalletWasabi.Fluent.Helpers;
 using WalletWasabi.Fluent.Models.Wallets;
 using WalletWasabi.Fluent.ViewModels.Navigation;
 using WalletWasabi.Wallets;
@@ -34,6 +35,22 @@ public partial class AddedWalletPageViewModel : RoutableViewModel
 	{
 		if (_wallet is not { })
 		{
+			return;
+		}
+
+		// Recovered, imported and hardware wallets can be born before the oldest filter we have.
+		// The filter store is only re-checkpointed on startup, see Global.CalculateSafestHeight.
+		var filterMinHeight = UiContext.Services.GetMinimumBlockHeight();
+		if (_walletSettings.BirthHeight is { } birthHeight && filterMinHeight is { } minHeight && birthHeight < minHeight)
+		{
+			UiContext.Services.SetLastSelectedWallet(WalletName);
+			UiContext.Services.UiConfig.ToFile();
+
+			await ShowErrorAsync(
+				"Restart required",
+				"Wasabi needs to download older block filters for this wallet. The application will restart to begin this process.",
+				"Add wallet");
+			AppLifetimeHelper.Shutdown(withShutdownPrevention: true, restart: true);
 			return;
 		}
 

@@ -79,6 +79,8 @@ public partial class WalletSettingsModel : ReactiveObject
 
 	public int MinGapLimit => _keyManager.MinGapLimit;
 
+	public uint? BirthHeight => _keyManager.GetBirthHeight()?.Height;
+
 	public bool IsCoinJoinPaused { get; set; }
 
 	/// <summary>
