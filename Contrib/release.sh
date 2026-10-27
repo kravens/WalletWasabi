@@ -698,6 +698,11 @@ MAC_SIGNING="yes"
 if [ ! -s "$P12_PATH" ]; then
   MAC_SIGNING="no"
   echo "No Apple signing certificates available; producing an unsigned app and dmg."
+elif [ -z "$MAC_TEAMID" ]; then
+  # A P12 without a Team ID is a fork's self-signed identity: a stable signature keeps
+  # macOS privacy grants (Full Disk Access) across builds, unlike ad-hoc signing.
+  MAC_SIGNING="self"
+  echo "No Apple Team ID; signing with the self-signed identity, without notarization."
 fi
 
 if [ "$MAC_SIGNING" = "yes" ]; then
@@ -745,7 +750,18 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 else
-# Unsigned: still repackage the zip so it carries the .app bundle like the signed release does.
+if [ "$MAC_SIGNING" = "self" ]; then
+security create-keychain -p ${KEYCHAIN_PASSWORD} ${KEYCHAIN_NAME}
+security set-keychain-settings ${KEYCHAIN_NAME}
+security unlock-keychain -p ${KEYCHAIN_PASSWORD} ${KEYCHAIN_NAME}
+security import ${P12_PATH} -k ${KEYCHAIN_PATH} -P ${MAC_P12_PASSWORD} -T /usr/bin/codesign
+security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+SELF_IDENTITY=$(security find-identity -p codesigning ${KEYCHAIN_PATH} | awk '/\)/{print $2; exit}')
+codesign --force --deep --keychain ${KEYCHAIN_PATH} --sign "$SELF_IDENTITY" "$APP_PATH"
+codesign --verify --deep --strict "$APP_PATH"
+security delete-keychain ${KEYCHAIN_NAME}
+fi
+# Unsigned or self-signed: still repackage the zip so it carries the .app bundle like the signed release does.
 ditto -c -k --keepParent "$APP_PATH" "$APP_NOTARIZE_FILE_PATH"
 fi
 
