@@ -12,7 +12,7 @@ public class TrezorWireCodecTests
 	public void EncodesAnEmptyMessageAsOnePaddedReport()
 	{
 		// GetFeatures (55) has no payload.
-		var reports = TrezorWireCodec.Encode(new TrezorMessage(55, []));
+		var reports = TrezorWireCodec.Encode(TrezorMessage.Empty(TrezorMessageType.GetFeatures));
 
 		var report = Assert.Single(reports);
 		Assert.Equal("3F2323003700000000" + new string('0', 2 * 55), Convert.ToHexString(report));
@@ -28,7 +28,7 @@ public class TrezorWireCodecTests
 	[InlineData(1000, 16)]
 	public void RoundTripsAcrossReportBoundaries(int payloadLength, int expectedReports)
 	{
-		var message = new TrezorMessage(17, Enumerable.Range(0, payloadLength).Select(i => (byte)(i + 1)).ToArray());
+		var message = new TrezorMessage(TrezorMessageType.Features, Enumerable.Range(0, payloadLength).Select(i => (byte)(i + 1)).ToArray());
 
 		var reports = TrezorWireCodec.Encode(message);
 
@@ -58,7 +58,7 @@ public class TrezorWireCodecTests
 	[Fact]
 	public void RejectsABrokenContinuation()
 	{
-		var reports = new Queue<byte[]>(TrezorWireCodec.Encode(new TrezorMessage(17, new byte[100])));
+		var reports = new Queue<byte[]>(TrezorWireCodec.Encode(new TrezorMessage(TrezorMessageType.Features, new byte[100])));
 		var first = reports.Dequeue();
 
 		Assert.Throws<InvalidDataException>(() => TrezorWireCodec.Decode(new Queue<byte[]>([first, new byte[TrezorWireCodec.ReportLength]]).Dequeue));
@@ -68,7 +68,7 @@ public class TrezorWireCodecTests
 	[Fact]
 	public void RejectsALengthAboveTheCapBeforeReadingOn()
 	{
-		var report = TrezorWireCodec.Encode(new TrezorMessage(17, []))[0];
+		var report = TrezorWireCodec.Encode(new TrezorMessage(TrezorMessageType.Features, []))[0];
 		report[5] = 0xFF; // Length becomes 0xFF000000.
 		int reads = 0;
 

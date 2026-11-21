@@ -10,9 +10,6 @@ public class TrezorUsbKatas
 	[Fact]
 	public void DeviceAnswersInitializeWithFeatures()
 	{
-		const ushort Initialize = 0;
-		const ushort Features = 17;
-
 		string path = Assert.Single(TrezorUsbTransport.Enumerate());
 		using var transport = TrezorUsbTransport.Open(path);
 		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -20,10 +17,10 @@ public class TrezorUsbKatas
 		// Twice: the answer is longer than one report, and the second call shows the first left nothing behind.
 		for (int i = 0; i < 2; i++)
 		{
-			transport.Write(new TrezorMessage(Initialize, []));
+			transport.Write(TrezorMessage.Empty(TrezorMessageType.Initialize));
 			var answer = transport.Read(timeout.Token);
 
-			Assert.Equal(Features, answer.MessageType);
+			Assert.Equal(TrezorMessageType.Features, answer.MessageType);
 			Assert.True(answer.Payload.Length > TrezorWireCodec.ReportLength);
 		}
 	}

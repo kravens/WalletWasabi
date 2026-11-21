@@ -3,9 +3,6 @@ using System.IO;
 
 namespace WalletWasabi.Hwi.Trezor;
 
-/// <summary>A device message: its type number and its protobuf payload.</summary>
-public record TrezorMessage(ushort MessageType, byte[] Payload);
-
 /// <summary>
 /// Trezor wire protocol v1: how one message travels over USB in 64-byte reports.
 /// The message is prefixed with "##", its type (u16 BE) and its payload length (u32 BE). That stream is cut into
@@ -26,7 +23,7 @@ public static class TrezorWireCodec
 		var stream = new byte[HeaderLength + message.Payload.Length];
 		stream[0] = (byte)'#';
 		stream[1] = (byte)'#';
-		BinaryPrimitives.WriteUInt16BigEndian(stream.AsSpan(2), message.MessageType);
+		BinaryPrimitives.WriteUInt16BigEndian(stream.AsSpan(2), (ushort)message.MessageType);
 		BinaryPrimitives.WriteUInt32BigEndian(stream.AsSpan(4), (uint)message.Payload.Length);
 		message.Payload.CopyTo(stream, HeaderLength);
 
@@ -75,7 +72,7 @@ public static class TrezorWireCodec
 			copied += count;
 		}
 
-		return new TrezorMessage(messageType, payload);
+		return new TrezorMessage((TrezorMessageType)messageType, payload);
 	}
 
 	private static string Describe(byte[] report) =>
