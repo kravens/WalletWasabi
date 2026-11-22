@@ -693,9 +693,9 @@ KEYCHAIN_NAME="build.keychain-db"
 KEYCHAIN_PATH="$HOME/Library/Keychains/$KEYCHAIN_NAME"
 KEYCHAIN_PASSWORD="hello123"
 
-# Forks (e.g. preview builds) have no Apple certificates; produce an unsigned app/dmg instead of failing.
+# Forks (e.g. preview builds) have no complete set of Apple certificates and credentials; produce an unsigned app/dmg instead of failing.
 MAC_SIGNING="yes"
-if [ ! -s "$P12_PATH" ]; then
+if [ ! -s "$P12_PATH" ] || [ ! -s "$CERT_PATH" ] || [ -z "${MAC_TEAMID:-}" ] || [ -z "${MAC_APPLEID:-}" ] || [ -z "${MAC_APPLEPSSWD:-}" ]; then
   MAC_SIGNING="no"
   echo "No Apple signing certificates available; producing an unsigned app and dmg."
 fi
